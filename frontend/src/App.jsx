@@ -1,122 +1,74 @@
-import { useState } from 'react'
-import heroImg from './assets/hero.png'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import './App.css'
+import { useState } from 'react';
+import Navbar from './components/Navbar';
+import Hero from './components/Hero';
+import Categories from './components/Categories';
+import About from './components/About';
+import Footer from './components/Footer';
+import ReportModal from './components/ReportModal';
+import './App.css';
 
+/**
+ * CivicAlert Main Application Component
+ * 
+ * Assembles the CivicAlert Homepage:
+ * - Navbar: Navigation & quick report action
+ * - Hero: Mission statement, primary CTA, and live preview card
+ * - Categories: 4 key civic issue categories (Roads, Streetlights, Sanitation, Water)
+ * - About: 3-step workflow & student capstone mission
+ * - Footer: Links, categories summary, and copyright
+ * - ReportModal: Interactive placeholder for the upcoming complaint submission system
+ */
 function App() {
-  const [count, setCount] = useState(0)
+  // State to control modal visibility
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  // State to track which category was clicked (or general report)
+  const [selectedCategory, setSelectedCategory] = useState(null);
+
+  /**
+   * Opens the placeholder report modal.
+   * Can be invoked without arguments (from hero/navbar) or with a specific category name.
+   */
+  const handleOpenReportModal = (categoryName = null) => {
+    setSelectedCategory(categoryName);
+    setIsModalOpen(true);
+  };
+
+  /**
+   * Closes the placeholder modal and resets selected category.
+   */
+  const handleCloseReportModal = () => {
+    setIsModalOpen(false);
+    setSelectedCategory(null);
+  };
 
   return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.jsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
+    <div className="app-layout">
+      {/* 1. Navigation Bar */}
+      <Navbar onOpenReportModal={() => handleOpenReportModal()} />
 
-      <div className="ticks"></div>
+      {/* Main Content Area */}
+      <main id="main-content">
+        {/* 2. Hero Section */}
+        <Hero onOpenReportModal={() => handleOpenReportModal()} />
 
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
+        {/* 3. Four Civic Categories Section */}
+        <Categories onOpenReportModal={handleOpenReportModal} />
 
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
-  )
+        {/* 4. About & How it Works Section */}
+        <About />
+      </main>
+
+      {/* 5. Footer */}
+      <Footer />
+
+      {/* 6. Placeholder Report Dialog */}
+      <ReportModal
+        isOpen={isModalOpen}
+        onClose={handleCloseReportModal}
+        selectedCategory={selectedCategory}
+      />
+    </div>
+  );
 }
 
-export default App
+export default App;
