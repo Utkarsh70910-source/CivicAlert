@@ -10,6 +10,14 @@ import HomePage from './pages/HomePage';
 import CategoriesPage from './pages/CategoriesPage';
 import ReportPage from './pages/ReportPage';
 import TrackPage from './pages/TrackPage';
+
+// Citizen Auth & Personal Pages
+import CitizenSignUpPage from './pages/CitizenSignUpPage';
+import CitizenSignInPage from './pages/CitizenSignInPage';
+import CitizenMyComplaintsPage from './pages/CitizenMyComplaintsPage';
+import CitizenComplaintDetailPage from './pages/CitizenComplaintDetailPage';
+import CitizenAccountPage from './pages/CitizenAccountPage';
+
 import WorkerLoginPage from './pages/WorkerLoginPage';
 import WorkerDashboardPage from './pages/WorkerDashboardPage';
 import WorkerComplaintsPage from './pages/WorkerComplaintsPage';
@@ -25,10 +33,19 @@ import './App.css';
 /**
  * Citizen route prefixes — ONLY these paths get the citizen Navbar + Footer.
  * Worker and Admin portals bring their own navigation components.
+ *
+ * NOTE: /citizen/signup and /citizen/signin are standalone auth pages
+ * that use their own minimal layout (no navbar/footer needed).
+ * /citizen/my-complaints and /citizen/account DO show the citizen navbar.
  */
 const CITIZEN_PATHS = ['/citizen', '/home', '/categories', '/report', '/track'];
+const CITIZEN_NAV_EXCLUDED = ['/citizen/signup', '/citizen/signin'];
 
 function isCitizenPath(pathname) {
+  // Exclude auth pages from showing the top navbar (they have their own full layout)
+  if (CITIZEN_NAV_EXCLUDED.some((p) => pathname === p || pathname.startsWith(p + '/'))) {
+    return false;
+  }
   return CITIZEN_PATHS.some((p) => pathname === p || pathname.startsWith(p + '/'));
 }
 
@@ -60,6 +77,36 @@ function AppLayout() {
           <Route path="/track" element={<TrackPage />} />
           <Route path="/citizen/report" element={<ReportPage />} />
           <Route path="/citizen/track" element={<TrackPage />} />
+
+          {/* ── Citizen Authentication (standalone pages, no citizen navbar) ── */}
+          <Route path="/citizen/signup" element={<CitizenSignUpPage />} />
+          <Route path="/citizen/signin" element={<CitizenSignInPage />} />
+
+          {/* ── Citizen Personal Pages (require citizen auth) ── */}
+          <Route
+            path="/citizen/my-complaints"
+            element={
+              <ProtectedRoute allowedRoles={['citizen']}>
+                <CitizenMyComplaintsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/citizen/complaints/:id"
+            element={
+              <ProtectedRoute allowedRoles={['citizen']}>
+                <CitizenComplaintDetailPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/citizen/account"
+            element={
+              <ProtectedRoute allowedRoles={['citizen']}>
+                <CitizenAccountPage />
+              </ProtectedRoute>
+            }
+          />
 
           {/* ── Staff Authentication Entry Points (private, not linked publicly) ── */}
           <Route path="/worker/login" element={<WorkerLoginPage />} />

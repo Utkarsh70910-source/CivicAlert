@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { complaintsApi } from '../services/api';
 import { CIVIC_CATEGORIES } from '../constants/categories';
 import LocationPicker from '../components/LocationPicker';
+import { useAuth } from '../context/AuthContext';
 
 /**
  * ReportPage Component
@@ -10,11 +11,14 @@ import LocationPicker from '../components/LocationPicker';
  * Standalone citizen reporting route (/report) matching the application design system.
  */
 function ReportPage() {
+  const { user, isAuthenticated } = useAuth();
+
   const [category, setCategory] = useState('');
   const [location, setLocation] = useState('');
   const [description, setDescription] = useState('');
-  const [citizenName, setCitizenName] = useState('');
-  const [citizenPhone, setCitizenPhone] = useState('');
+  // Pre-fill name/phone from logged-in citizen; allow override
+  const [citizenName, setCitizenName] = useState(user?.name || '');
+  const [citizenPhone, setCitizenPhone] = useState(user?.phone || '');
 
   // Map pin coordinates (optional — citizen may skip the map)
   const [pinLat, setPinLat] = useState(null);
@@ -198,6 +202,11 @@ function ReportPage() {
               <Link to={`/track?ref=${submittedData.referenceId}`} className="btn btn-primary btn-lg">
                 Track This Complaint Now &rarr;
               </Link>
+              {isAuthenticated && (
+                <Link to="/citizen/my-complaints" className="btn btn-secondary">
+                  View in My Complaints
+                </Link>
+              )}
               <button
                 type="button"
                 className="btn btn-secondary"

@@ -12,7 +12,7 @@
  * In local development:
  *   Falls back automatically to http://localhost:5000/api.
  */
-const rawBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
+const rawBaseUrl = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 const sanitizedBaseUrl = rawBaseUrl.replace(/\/+$/, '');
 const API_BASE_URL = sanitizedBaseUrl.endsWith('/api')
   ? sanitizedBaseUrl
@@ -63,6 +63,16 @@ async function request(endpoint, options = {}) {
 // Authentication API
 // ============================================================================
 export const authApi = {
+  /**
+   * Citizen self-registration
+   * Fields: name, email, mobile, password, confirmPassword
+   */
+  register: (data) =>
+    request('/auth/register', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
   login: (credentials) =>
     request('/auth/login', {
       method: 'POST',
@@ -89,6 +99,12 @@ export const complaintsApi = {
     const queryString = query.toString() ? `?${query.toString()}` : '';
     return request(`/complaints${queryString}`);
   },
+
+  /**
+   * Get complaints owned by the authenticated citizen.
+   * Backend enforces identity from session — not from query params.
+   */
+  getMy: () => request('/complaints/my'),
 
   getById: (id) => request(`/complaints/${encodeURIComponent(id)}`),
 

@@ -2,7 +2,8 @@
  * CivicAlert - Complaints API Routes
  * 
  * Endpoints:
- * - GET   /api/complaints             (List complaints: all for admin, assigned for worker)
+ * - GET   /api/complaints             (List complaints: all for admin, assigned for worker, own for citizen)
+ * - GET   /api/complaints/my          (Citizen: fetch only their own complaints, auth-required)
  * - POST  /api/complaints             (Citizen/Public report submission)
  * - GET   /api/complaints/:id         (Lookup by ID or Reference ID, public sanitized / worker / admin)
  * - PATCH /api/complaints/:id/status  (Update status, resolution notes, resolution photo)
@@ -66,8 +67,12 @@ router.get('/', authenticate, (req, res) => {
     }
   } else if (role === 'citizen') {
     // Citizen sees only complaints submitted by them
+    // Priority: match by citizenId (set when logged-in citizen submits), then fallback by name/phone
     results = results.filter(
-      (c) => (name && c.citizenName === name) || (phone && c.citizenPhone === phone)
+      (c) =>
+        (c.citizenId && c.citizenId === userId) ||
+        (!c.citizenId && name && c.citizenName === name) ||
+        (!c.citizenId && phone && c.citizenPhone === phone)
     );
   } else {
     return res.status(403).json({
@@ -87,11 +92,43 @@ router.get('/', authenticate, (req, res) => {
 });
 
 /**
+ * @route   GET /api/complaints/my
+ * @desc    Get complaints belonging to the authenticated citizen.
+ *          Uses citizenId (most secure), then falls back to name/phone for
+ *          legacy complaints submitted before citizen accounts existed.
+ * @access  Protected (Citizen only)
+ *
+ * NOTE FOR VIVA (Security):
+ * - Backend enforces identity: the citizenId comes from the validated session,
+ *   NOT from the query string. A citizen cannot see another citizen's data by
+ *   changing a URL parameter.
+ * - Admin and worker roles are explicitly rejected here (403).
+ */
+router.get('/my', authenticate, authorize(['citizen']), (req, res) => {
+  const { id: userId, name, phone } = req.user;
+
+  const myComplaints = mockComplaints.filter(
+    (c) =>
+      (c.citizenId && c.citizenId === userId) ||
+      (!c.citizenId && name && c.citizenName === name) ||
+      (!c.citizenId && phone && c.citizenPhone === phone)
+  );
+
+  const enrichedResults = myComplaints.map(enrichComplaint);
+
+  return res.status(200).json({
+    success: true,
+    count: enrichedResults.length,
+    complaints: enrichedResults,
+  });
+});
+
+/**
  * @route   POST /api/complaints
  * @desc    Submit a new citizen civic issue report
  * @access  Public (Citizen or Guest)
  */
-router.post('/', (req, res) => {
+router.post('/', optionalAuth, (req, res) => {
   const {
     category,
     location,
@@ -157,8 +194,9 @@ router.post('/', (req, res) => {
     photos: normalizedPhotos,
     photoPreview: normalizedPhotos[0] || null,
     status: 'Submitted',
-    citizenName: citizenName && citizenName.trim() ? citizenName.trim() : 'Anonymous Resident',
-    citizenPhone: citizenPhone && citizenPhone.trim() ? citizenPhone.trim() : null,
+    citizenId: req.user ? req.user.id : null,   // Set when logged-in citizen submits
+    citizenName: citizenName && citizenName.trim() ? citizenName.trim() : (req.user ? req.user.name : 'Anonymous Resident'),
+    citizenPhone: citizenPhone && citizenPhone.trim() ? citizenPhone.trim() : (req.user ? (req.user.phone || null) : null),
     createdAt: new Date().toISOString(),
     assignedWorkerId: null,
     assignedWorkerName: null,
@@ -231,7 +269,39 @@ router.get('/:id', optionalAuth, (req, res) => {
     });
   }
 
-  // 3. Public tracking view (Privacy Preserved: No citizen private phone/name exposed)
+  // 3. Citizen permission check: citizen can view their own complaints
+  if (req.user && req.user.role === 'citizen') {
+    const isOwner =
+      (complaint.citizenId && complaint.citizenId === req.user.id) ||
+      (!complaint.citizenId && complaint.citizenName === req.user.name) ||
+      (!complaint.citizenId && complaint.citizenPhone === req.user.phone);
+
+    if (isOwner) {
+      // Return full enriched view to the authenticated citizen owner
+      return res.status(200).json({
+        success: true,
+        complaint: enriched,
+        accessLevel: 'citizen-owner',
+      });
+    }
+
+    // Direct ID request (e.g. /cmp-xxx) by non-owner citizen is forbidden
+    if (searchId.startsWith('cmp-')) {
+      return res.status(403).json({
+        success: false,
+        message: 'Forbidden: You are not authorized to view this complaint.',
+      });
+    }
+
+    // Public reference ID lookup (e.g. CA-xxxxx) falls through to sanitized public tracking view
+    return res.status(200).json({
+      success: true,
+      complaint: sanitizeForPublic(complaint),
+      accessLevel: 'public-sanitized',
+    });
+  }
+
+  // 4. Public tracking view (Privacy Preserved: No citizen private phone/name exposed)
   return res.status(200).json({
     success: true,
     complaint: sanitizeForPublic(complaint),

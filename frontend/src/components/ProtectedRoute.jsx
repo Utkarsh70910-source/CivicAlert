@@ -29,6 +29,9 @@ function ProtectedRoute({ children, allowedRoles = [] }) {
     if (allowedRoles.includes('worker')) {
       return <Navigate to="/worker/login" replace />;
     }
+    if (allowedRoles.includes('citizen')) {
+      return <Navigate to="/citizen/signin" replace />;
+    }
     return <Navigate to="/" replace />;
   }
 
@@ -71,6 +74,11 @@ function ProtectedRoute({ children, allowedRoles = [] }) {
           </div>
 
           <div className="unauthorized-actions">
+            {role === 'citizen' && (
+              <Link to="/citizen" className="btn btn-primary">
+                Return to Citizen Home
+              </Link>
+            )}
             {role === 'worker' && (
               <Link to="/worker/dashboard" className="btn btn-primary">
                 Return to Worker Dashboard

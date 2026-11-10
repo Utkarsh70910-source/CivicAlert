@@ -43,6 +43,22 @@ export function AuthProvider({ children }) {
   };
 
   /**
+   * Register a new citizen account and auto-login.
+   * Fields: name, email, mobile, password, confirmPassword
+   */
+  const register = async (data) => {
+    const response = await authApi.register(data);
+    if (response.success && response.token && response.user) {
+      setToken(response.token);
+      setUser(response.user);
+      localStorage.setItem('civicalert_token', response.token);
+      localStorage.setItem('civicalert_user', JSON.stringify(response.user));
+      return response.user;
+    }
+    throw new Error(response.message || 'Registration failed.');
+  };
+
+  /**
    * Log out active session
    */
   const logout = async () => {
@@ -65,6 +81,7 @@ export function AuthProvider({ children }) {
     isAuthenticated: Boolean(user && token),
     isLoading,
     login,
+    register,
     logout,
   };
 

@@ -44,6 +44,7 @@ const configuredOrigins = [
   'http://localhost:3000',
   'http://localhost:5174',
   'http://127.0.0.1:5173',
+  'https://civicalert-frontend.onrender.com',
   ...(process.env.FRONTEND_URL ? process.env.FRONTEND_URL.split(',').map((u) => u.trim()) : []),
   ...(process.env.CLIENT_URL ? process.env.CLIENT_URL.split(',').map((u) => u.trim()) : []),
 ].filter(Boolean);
