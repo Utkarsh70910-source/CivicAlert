@@ -126,7 +126,7 @@ function AdminLoginPage() {
 
         <div className="auth-footer-links">
           <Link to="/" className="sub-link">
-            Return to Homepage
+            &larr; All Portals
           </Link>
         </div>
       </div>

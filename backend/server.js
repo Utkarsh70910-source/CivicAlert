@@ -38,11 +38,40 @@ const PORT = process.env.PORT || 5000;
 // Middleware Configuration
 // -----------------------------------------------------------------------------
 
-// Allow cross-origin requests from the Vite React frontend
-app.use(cors());
+// Allowed frontend origins (local development + production deployment URLs)
+const configuredOrigins = [
+  'http://localhost:5173',
+  'http://localhost:3000',
+  'http://localhost:5174',
+  'http://127.0.0.1:5173',
+  ...(process.env.FRONTEND_URL ? process.env.FRONTEND_URL.split(',').map((u) => u.trim()) : []),
+  ...(process.env.CLIENT_URL ? process.env.CLIENT_URL.split(',').map((u) => u.trim()) : []),
+].filter(Boolean);
 
-// Parse JSON request bodies (supports optional base64 image strings)
-app.use(express.json({ limit: '10mb' }));
+// CORS configuration supporting both local dev and production domains
+const corsOptions = {
+  origin: (origin, callback) => {
+    // Allow non-browser requests (e.g. mobile clients, curl, uptime monitors, backend test runners)
+    if (!origin) return callback(null, true);
+
+    const isLocalhost = /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
+    const isAllowed = configuredOrigins.some((allowed) => allowed.toLowerCase() === origin.toLowerCase());
+
+    if (isAllowed || isLocalhost || process.env.NODE_ENV !== 'production') {
+      return callback(null, true);
+    }
+
+    return callback(new Error(`CORS blocked for unauthorized origin: ${origin}`));
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+};
+
+app.use(cors(corsOptions));
+
+// Parse JSON request bodies (supports multiple base64 image strings)
+app.use(express.json({ limit: '25mb' }));
 
 // -----------------------------------------------------------------------------
 // API Routes
@@ -61,7 +90,7 @@ app.get('/', (req, res) => {
       workers: '/api/workers',
       stats: '/api/stats',
     },
-    mode: 'Local Development (In-Memory Mock Persistence)',
+    mode: process.env.NODE_ENV === 'production' ? 'Production API' : 'Development (In-Memory Mock Persistence)',
   });
 });
 

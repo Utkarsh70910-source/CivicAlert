@@ -12,55 +12,73 @@ import ReportPage from './pages/ReportPage';
 import TrackPage from './pages/TrackPage';
 import WorkerLoginPage from './pages/WorkerLoginPage';
 import WorkerDashboardPage from './pages/WorkerDashboardPage';
+import WorkerComplaintsPage from './pages/WorkerComplaintsPage';
 import WorkerComplaintDetailPage from './pages/WorkerComplaintDetailPage';
 import AdminLoginPage from './pages/AdminLoginPage';
 import AdminDashboardPage from './pages/AdminDashboardPage';
+import AdminComplaintsPage from './pages/AdminComplaintsPage';
+import AdminWorkersPage from './pages/AdminWorkersPage';
 import AdminComplaintDetailPage from './pages/AdminComplaintDetailPage';
 
 import './App.css';
 
 /**
- * Layout wrapper that conditionally hides standard citizen Navbar/Footer
- * on the dedicated portal gateway landing page and specialized full-page dashboards.
+ * Citizen route prefixes — ONLY these paths get the citizen Navbar + Footer.
+ * Worker and Admin portals bring their own navigation components.
+ */
+const CITIZEN_PATHS = ['/citizen', '/home', '/categories', '/report', '/track'];
+
+function isCitizenPath(pathname) {
+  return CITIZEN_PATHS.some((p) => pathname === p || pathname.startsWith(p + '/'));
+}
+
+/**
+ * Layout wrapper.
+ * - Citizen routes → citizen <Navbar /> + <Footer />
+ * - Worker/Admin routes → no citizen nav (pages embed their own portal navbars)
+ * - Landing / login gateway → no nav
  */
 function AppLayout() {
   const location = useLocation();
-  const isDedicatedPage =
-    location.pathname === '/' ||
-    location.pathname === '/login' ||
-    location.pathname.startsWith('/worker/dashboard') ||
-    location.pathname.startsWith('/worker/complaints') ||
-    location.pathname.startsWith('/admin/dashboard') ||
-    location.pathname.startsWith('/admin/complaints') ||
-    location.pathname.startsWith('/admin/workers');
+  const showCitizenNav = isCitizenPath(location.pathname);
 
   return (
     <div className="app-layout">
-      {!isDedicatedPage && <Navbar />}
+      {showCitizenNav && <Navbar />}
 
       <main id="main-content" className="app-main">
         <Routes>
-          {/* Multi-Portal Gateway Landing Page (CUIMS-Inspired) */}
+          {/* ── Multi-Portal Gateway Landing Page ── */}
           <Route path="/" element={<LandingPage />} />
           <Route path="/login" element={<LandingPage />} />
 
-          {/* Citizen Experience Routes */}
+          {/* ── Citizen Experience Routes ── */}
           <Route path="/citizen" element={<HomePage />} />
           <Route path="/home" element={<HomePage />} />
           <Route path="/categories" element={<CategoriesPage />} />
           <Route path="/report" element={<ReportPage />} />
           <Route path="/track" element={<TrackPage />} />
+          <Route path="/citizen/report" element={<ReportPage />} />
+          <Route path="/citizen/track" element={<TrackPage />} />
 
-          {/* Staff Authentication Entry Points */}
+          {/* ── Staff Authentication Entry Points (private, not linked publicly) ── */}
           <Route path="/worker/login" element={<WorkerLoginPage />} />
           <Route path="/admin/login" element={<AdminLoginPage />} />
 
-          {/* Protected Field Worker Portal Routes */}
+          {/* ── Protected Field Worker Portal ── */}
           <Route
             path="/worker/dashboard"
             element={
               <ProtectedRoute allowedRoles={['worker']}>
                 <WorkerDashboardPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/worker/complaints"
+            element={
+              <ProtectedRoute allowedRoles={['worker']}>
+                <WorkerComplaintsPage />
               </ProtectedRoute>
             }
           />
@@ -73,12 +91,12 @@ function AppLayout() {
             }
           />
 
-          {/* Protected Municipal Admin Portal Routes */}
+          {/* ── Protected Municipal Admin Portal ── */}
           <Route
             path="/admin/dashboard"
             element={
               <ProtectedRoute allowedRoles={['admin']}>
-                <AdminDashboardPage initialTab="complaints" />
+                <AdminDashboardPage />
               </ProtectedRoute>
             }
           />
@@ -86,7 +104,7 @@ function AppLayout() {
             path="/admin/complaints"
             element={
               <ProtectedRoute allowedRoles={['admin']}>
-                <AdminDashboardPage initialTab="complaints" />
+                <AdminComplaintsPage />
               </ProtectedRoute>
             }
           />
@@ -94,7 +112,7 @@ function AppLayout() {
             path="/admin/workers"
             element={
               <ProtectedRoute allowedRoles={['admin']}>
-                <AdminDashboardPage initialTab="workers" />
+                <AdminWorkersPage />
               </ProtectedRoute>
             }
           />
@@ -107,7 +125,7 @@ function AppLayout() {
             }
           />
 
-          {/* 404 Fallback Route */}
+          {/* ── 404 Fallback ── */}
           <Route
             path="*"
             element={
@@ -126,7 +144,7 @@ function AppLayout() {
         </Routes>
       </main>
 
-      {!isDedicatedPage && <Footer />}
+      {showCitizenNav && <Footer />}
     </div>
   );
 }

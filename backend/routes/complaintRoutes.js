@@ -99,6 +99,9 @@ router.post('/', (req, res) => {
     citizenName,
     citizenPhone,
     photoPreview,
+    photos,
+    latitude,
+    longitude,
   } = req.body;
 
   // Validation
@@ -121,6 +124,16 @@ router.post('/', (req, res) => {
     });
   }
 
+  // Normalize uploaded photos (supports both array 'photos' and single 'photoPreview')
+  let normalizedPhotos = [];
+  if (Array.isArray(photos)) {
+    normalizedPhotos = photos.filter((p) => typeof p === 'string' && p.trim().length > 0);
+  } else if (photoPreview && typeof photoPreview === 'string' && photoPreview.trim().length > 0) {
+    normalizedPhotos = [photoPreview];
+  }
+  // Enforce reasonable limit (max 5 photos)
+  normalizedPhotos = normalizedPhotos.slice(0, 5);
+
   // Generate unique Reference ID (e.g. CA-492817)
   let generatedRefId;
   do {
@@ -135,7 +148,14 @@ router.post('/', (req, res) => {
     title: `${category.trim()} reported at ${location.trim().slice(0, 30)}`,
     description: description.trim(),
     location: location.trim(),
-    photoPreview: photoPreview || null,
+    latitude: latitude !== undefined && latitude !== null && !isNaN(Number(latitude))
+      ? Number(latitude)
+      : null,
+    longitude: longitude !== undefined && longitude !== null && !isNaN(Number(longitude))
+      ? Number(longitude)
+      : null,
+    photos: normalizedPhotos,
+    photoPreview: normalizedPhotos[0] || null,
     status: 'Submitted',
     citizenName: citizenName && citizenName.trim() ? citizenName.trim() : 'Anonymous Resident',
     citizenPhone: citizenPhone && citizenPhone.trim() ? citizenPhone.trim() : null,

@@ -5,7 +5,18 @@
  * Automatically attaches authentication token from localStorage.
  */
 
-const API_BASE_URL = 'http://localhost:5000/api';
+/**
+ * Resolves the backend REST API base URL.
+ * In production (e.g. deployed on Render, Vercel, or Netlify):
+ *   Configured via VITE_API_BASE_URL environment variable.
+ * In local development:
+ *   Falls back automatically to http://localhost:5000/api.
+ */
+const rawBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
+const sanitizedBaseUrl = rawBaseUrl.replace(/\/+$/, '');
+const API_BASE_URL = sanitizedBaseUrl.endsWith('/api')
+  ? sanitizedBaseUrl
+  : `${sanitizedBaseUrl}/api`;
 
 /**
  * Generic request helper with automatic JSON handling and Auth headers.
@@ -42,7 +53,7 @@ async function request(endpoint, options = {}) {
   } catch (err) {
     // If backend is unreachable
     if (!err.status) {
-      console.warn('CivicAlert Backend unreachable. Check if backend server is running on port 5000.');
+      console.warn(`CivicAlert Backend unreachable at ${API_BASE_URL}. Ensure backend service is running.`);
     }
     throw err;
   }
@@ -110,6 +121,17 @@ export const workersApi = {
     request('/workers', {
       method: 'POST',
       body: JSON.stringify(workerData),
+    }),
+
+  update: (id, workerData) =>
+    request(`/workers/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      body: JSON.stringify(workerData),
+    }),
+
+  delete: (id) =>
+    request(`/workers/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
     }),
 };
 

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { complaintsApi } from '../services/api';
 import { CIVIC_CATEGORIES } from '../constants/categories';
+import LocationPicker from '../components/LocationPicker';
 
 /**
  * ReportPage Component
@@ -15,32 +16,83 @@ function ReportPage() {
   const [citizenName, setCitizenName] = useState('');
   const [citizenPhone, setCitizenPhone] = useState('');
 
-  const [photoPreview, setPhotoPreview] = useState(null);
-  const [photoName, setPhotoName] = useState('');
+  // Map pin coordinates (optional — citizen may skip the map)
+  const [pinLat, setPinLat] = useState(null);
+  const [pinLng, setPinLng] = useState(null);
+
+  // Multiple photo uploads state (up to 5 photos)
+  const [photos, setPhotos] = useState([]);
 
   const [errors, setErrors] = useState({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [apiError, setApiError] = useState(null);
   const [submittedData, setSubmittedData] = useState(null);
 
-  const handlePhotoChange = (event) => {
-    const file = event.target.files && event.target.files[0];
-    if (!file) return;
+  const MAX_PHOTOS = 5;
+  const MAX_FILE_SIZE_MB = 5;
 
-    if (!file.type.startsWith('image/')) {
-      setErrors((prev) => ({ ...prev, photo: 'Please upload a valid image file.' }));
+  const handlePhotosChange = (event) => {
+    const files = Array.from(event.target.files || []);
+    if (!files.length) return;
+
+    if (photos.length + files.length > MAX_PHOTOS) {
+      setErrors((prev) => ({
+        ...prev,
+        photo: `You can upload at most ${MAX_PHOTOS} photos in total. (Currently selected: ${photos.length})`,
+      }));
       return;
     }
 
-    setPhotoName(file.name);
-    const reader = new FileReader();
-    reader.onload = () => setPhotoPreview(reader.result);
-    reader.readAsDataURL(file);
+    const invalidFile = files.find((f) => !f.type.startsWith('image/'));
+    if (invalidFile) {
+      setErrors((prev) => ({ ...prev, photo: 'Please upload only valid image files (JPG, PNG, WebP).' }));
+      return;
+    }
+
+    const oversizedFile = files.find((f) => f.size > MAX_FILE_SIZE_MB * 1024 * 1024);
+    if (oversizedFile) {
+      setErrors((prev) => ({
+        ...prev,
+        photo: `Each image must be under ${MAX_FILE_SIZE_MB}MB. '${oversizedFile.name}' is too large.`,
+      }));
+      return;
+    }
+
+    setErrors((prev) => {
+      const updated = { ...prev };
+      delete updated.photo;
+      return updated;
+    });
+
+    files.forEach((file) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        setPhotos((prev) => {
+          if (prev.length >= MAX_PHOTOS) return prev;
+          return [
+            ...prev,
+            {
+              id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+              name: file.name,
+              dataUrl: reader.result,
+              size: file.size,
+            },
+          ];
+        });
+      };
+      reader.readAsDataURL(file);
+    });
+
+    event.target.value = '';
   };
 
-  const handleRemovePhoto = () => {
-    setPhotoPreview(null);
-    setPhotoName('');
+  const handleRemovePhoto = (idToRemove) => {
+    setPhotos((prev) => prev.filter((p) => p.id !== idToRemove));
+    setErrors((prev) => {
+      const updated = { ...prev };
+      delete updated.photo;
+      return updated;
+    });
   };
 
   const validateForm = () => {
@@ -63,13 +115,18 @@ function ReportPage() {
 
     setIsSubmitting(true);
     try {
+      const photoDataUrls = photos.map((p) => p.dataUrl);
+
       const response = await complaintsApi.create({
         category,
         location: location.trim(),
         description: description.trim(),
         citizenName: citizenName.trim() || undefined,
         citizenPhone: citizenPhone.trim() || undefined,
-        photoPreview: photoPreview || undefined,
+        photos: photoDataUrls,
+        photoPreview: photoDataUrls[0] || undefined,
+        latitude: pinLat !== null ? pinLat : undefined,
+        longitude: pinLng !== null ? pinLng : undefined,
       });
 
       if (response.success) {
@@ -78,7 +135,8 @@ function ReportPage() {
           category: response.complaint.category,
           location: response.complaint.location,
           description: response.complaint.description,
-          photoPreview,
+          photos: photoDataUrls,
+          photoPreview: photoDataUrls[0] || null,
           submittedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         });
       }
@@ -124,6 +182,16 @@ function ReportPage() {
                 <span className="summary-label">Description:</span>
                 <span>{submittedData.description}</span>
               </div>
+              {submittedData.photos && submittedData.photos.length > 0 && (
+                <div className="summary-row photo-summary-row">
+                  <span className="summary-label">Photos ({submittedData.photos.length}):</span>
+                  <div className="summary-photos-strip">
+                    {submittedData.photos.map((url, idx) => (
+                      <img key={idx} src={url} alt={`Evidence #${idx + 1}`} className="summary-img-thumb" />
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="btn-group-center">
@@ -137,7 +205,9 @@ function ReportPage() {
                   setSubmittedData(null);
                   setLocation('');
                   setDescription('');
-                  setPhotoPreview(null);
+                  setPhotos([]);
+                  setPinLat(null);
+                  setPinLng(null);
                 }}
               >
                 Submit Another Report
@@ -202,6 +272,20 @@ function ReportPage() {
                 {errors.location && <p className="form-error-msg">{errors.location}</p>}
               </div>
 
+              {/* Map Location Picker */}
+              <div className="form-group">
+                <label className="form-label">
+                  Pin Location on Map
+                  <span className="optional-tag">Optional but recommended</span>
+                </label>
+                <LocationPicker
+                  onChange={(lat, lng) => {
+                    setPinLat(lat);
+                    setPinLng(lng);
+                  }}
+                />
+              </div>
+
               <div className="form-group">
                 <label className="form-label" htmlFor="page-report-description">
                   Detailed Description <span className="required-star">*</span>
@@ -249,36 +333,71 @@ function ReportPage() {
                 </div>
               </div>
 
+              {/* Photo Evidence (Multiple photos supported) */}
               <div className="form-group">
-                <label className="form-label">
-                  Photo Evidence <span className="optional-tag">Optional</span>
+                <label className="form-label" htmlFor="page-report-photo-input">
+                  Photo Evidence <span className="optional-tag">Optional &bull; Max 5 photos</span>
                 </label>
-                {photoPreview ? (
-                  <div className="photo-preview-card">
-                    <img src={photoPreview} alt="Uploaded problem" className="photo-preview-img" />
-                    <div className="photo-preview-meta">
-                      <span className="photo-preview-name">{photoName}</span>
+
+                <input
+                  id="page-report-photo-input"
+                  type="file"
+                  multiple
+                  accept="image/*"
+                  className="visually-hidden-file-input"
+                  onChange={handlePhotosChange}
+                  disabled={photos.length >= MAX_PHOTOS}
+                />
+
+                {errors.photo && (
+                  <p className="form-error-msg" role="alert" style={{ marginBottom: '0.75rem' }}>
+                    {errors.photo}
+                  </p>
+                )}
+
+                {photos.length > 0 ? (
+                  <div className="multi-photos-manager">
+                    <div className="multi-photos-grid">
+                      {photos.map((p, idx) => (
+                        <div key={p.id} className="multi-photo-thumb-card">
+                          <img src={p.dataUrl} alt={`Upload preview ${idx + 1}`} className="multi-photo-thumb-img" />
+                          <div className="multi-photo-thumb-meta">
+                            <span className="multi-photo-thumb-name" title={p.name}>{p.name}</span>
+                            <span className="multi-photo-thumb-size">{(p.size / 1024).toFixed(0)} KB</span>
+                          </div>
+                          <button
+                            type="button"
+                            className="multi-photo-remove-btn"
+                            onClick={() => handleRemovePhoto(p.id)}
+                            title={`Remove ${p.name}`}
+                            aria-label={`Remove photo ${idx + 1}`}
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      ))}
                     </div>
-                    <button type="button" className="photo-remove-btn" onClick={handleRemovePhoto}>
-                      Remove
-                    </button>
+
+                    {photos.length < MAX_PHOTOS && (
+                      <label htmlFor="page-report-photo-input" className="multi-photos-add-more-btn">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                          <line x1="12" y1="5" x2="12" y2="19" />
+                          <line x1="5" y1="12" x2="19" y2="12" />
+                        </svg>
+                        <span>Add More Photos ({photos.length}/{MAX_PHOTOS})</span>
+                      </label>
+                    )}
                   </div>
                 ) : (
-                  <label className="file-upload-dropzone">
-                    <input
-                      type="file"
-                      accept="image/*"
-                      className="visually-hidden-file-input"
-                      onChange={handlePhotoChange}
-                    />
+                  <label htmlFor="page-report-photo-input" className="file-upload-dropzone">
                     <div className="file-upload-icon">
-                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                         <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
                         <circle cx="12" cy="13" r="4" />
                       </svg>
                     </div>
-                    <span className="file-upload-title">Click to attach photo evidence</span>
-                    <span className="file-upload-hint">JPG, PNG, WebP</span>
+                    <span className="file-upload-title">Click to choose photos (up to 5)</span>
+                    <span className="file-upload-hint">PNG, JPG, WebP up to 5MB each &bull; Select multiple files</span>
                   </label>
                 )}
               </div>

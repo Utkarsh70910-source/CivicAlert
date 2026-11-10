@@ -85,27 +85,11 @@ function Navbar({ onOpenReportModal }) {
                 All Portals
               </Link>
             </li>
-
-            {/* Staff portal links: only shown when authenticated as staff (not for citizens or the public) */}
-            {isAuthenticated && role === 'admin' && (
-              <li className="nav-item">
-                <Link to="/admin/dashboard" className="nav-link nav-portal-link" onClick={handleNavLinkClick}>
-                  Admin Dashboard
-                </Link>
-              </li>
-            )}
-            {isAuthenticated && role === 'worker' && (
-              <li className="nav-item">
-                <Link to="/worker/dashboard" className="nav-link nav-portal-link" onClick={handleNavLinkClick}>
-                  Worker Dashboard
-                </Link>
-              </li>
-            )}
           </ul>
 
           {/* Quick Actions & Auth Widget */}
           <div className="nav-cta-wrapper">
-            {isAuthenticated ? (
+            {isAuthenticated && (
               <div className="nav-auth-user">
                 <span className="nav-user-badge">
                   {user?.name?.split(' ')[0]} ({role})
@@ -118,28 +102,27 @@ function Navbar({ onOpenReportModal }) {
                   Sign Out
                 </button>
               </div>
-            ) : (
-              <button
-                type="button"
-                className="btn btn-primary nav-cta-btn"
-                onClick={handleReportClick}
-              >
-                <svg
-                  width="16"
-                  height="16"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <line x1="12" y1="5" x2="12" y2="19" />
-                  <line x1="5" y1="12" x2="19" y2="12" />
-                </svg>
-                <span>Report Issue</span>
-              </button>
             )}
+            <button
+              type="button"
+              className="btn btn-primary nav-cta-btn"
+              onClick={handleReportClick}
+            >
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <line x1="12" y1="5" x2="12" y2="19" />
+                <line x1="5" y1="12" x2="19" y2="12" />
+              </svg>
+              <span>Report Issue</span>
+            </button>
           </div>
         </nav>
 

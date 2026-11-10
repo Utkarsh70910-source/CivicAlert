@@ -1,7 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
 import { complaintsApi } from '../services/api';
+import ComplaintMap from '../components/ComplaintMap';
+import ComplaintPhotoGallery from '../components/ComplaintPhotoGallery';
+import WorkerNavbar from '../components/WorkerNavbar';
 
 /**
  * WorkerComplaintDetailPage Component
@@ -15,7 +17,6 @@ import { complaintsApi } from '../services/api';
  */
 function WorkerComplaintDetailPage() {
   const { id } = useParams();
-  const { user, logout } = useAuth();
 
   const [complaint, setComplaint] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -90,40 +91,17 @@ function WorkerComplaintDetailPage() {
 
   return (
     <div className="portal-dashboard-wrapper worker-portal-bg">
-      {/* Top Banner / Worker Header */}
-      <header className="dashboard-top-navbar">
-        <div className="container dashboard-navbar-inner">
-          <div className="dashboard-brand">
-            <span className="brand-icon worker-icon">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
-              </svg>
-            </span>
-            <div>
-              <span className="brand-title">CivicAlert Field Portal</span>
-              <span className="portal-badge-pill">Task Inspection</span>
-            </div>
-          </div>
-
-          <div className="user-profile-widget">
-            <div className="user-meta-text">
-              <span className="user-name-bold">{user?.name}</span>
-              <span className="user-role-badge">
-                {user?.workerId} &bull; {user?.category}
-              </span>
-            </div>
-            <Link to="/worker/dashboard" className="btn btn-secondary btn-sm">
-              &larr; Back to Dashboard
-            </Link>
-            <button type="button" className="btn btn-secondary btn-sm logout-btn" onClick={logout}>
-              Sign Out
-            </button>
-          </div>
-        </div>
-      </header>
+      <WorkerNavbar />
 
       {/* Main Container */}
       <main className="container dashboard-main-content">
+        {/* Back Link Breadcrumb */}
+        <div style={{ marginBottom: '1.25rem' }}>
+          <Link to="/worker/complaints" className="btn btn-secondary btn-sm">
+            &larr; Back to Complaints
+          </Link>
+        </div>
+
         {isLoading ? (
           <div className="dashboard-loading-box">
             <div className="spinner-border"></div>
@@ -140,8 +118,8 @@ function WorkerComplaintDetailPage() {
             <h3>Access Denied or Not Found</h3>
             <p>{apiError}</p>
             <div className="btn-group-center" style={{ marginTop: '1.5rem' }}>
-              <Link to="/worker/dashboard" className="btn btn-primary">
-                Return to My Assigned Tasks
+              <Link to="/worker/complaints" className="btn btn-primary">
+                Return to Assigned Complaints
               </Link>
             </div>
           </div>
@@ -174,10 +152,24 @@ function WorkerComplaintDetailPage() {
               </div>
 
               <div className="sheet-grid" style={{ gridTemplateColumns: '1fr' }}>
-                <div className="detail-item">
-                  <span className="detail-label">Location / Landmark</span>
-                  <p className="detail-val location-val">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+
+                {/* Reported Issue Photos Gallery */}
+                <ComplaintPhotoGallery
+                  photos={complaint.photos}
+                  photoPreview={complaint.photoPreview}
+                  title="Reported Issue Photos"
+                />
+
+                {/* Complaint Location Map */}
+                <div className="detail-section-block">
+                  <span className="detail-section-label">Complaint Location</span>
+                  <ComplaintMap
+                    latitude={complaint.latitude}
+                    longitude={complaint.longitude}
+                    locationText={complaint.location}
+                  />
+                  <p className="detail-val location-val" style={{ marginTop: '0.5rem' }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                       <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
                       <circle cx="12" cy="10" r="3" />
                     </svg>
@@ -232,16 +224,6 @@ function WorkerComplaintDetailPage() {
                   </p>
                 </div>
 
-                {complaint.photoPreview && (
-                  <div className="detail-item">
-                    <span className="detail-label">Initial Citizen Photo</span>
-                    <img
-                      src={complaint.photoPreview}
-                      alt="Citizen evidence"
-                      className="track-photo-preview"
-                    />
-                  </div>
-                )}
               </div>
             </div>
 
@@ -330,8 +312,8 @@ function WorkerComplaintDetailPage() {
                 </div>
 
                 <div className="form-actions-right">
-                  <Link to="/worker/dashboard" className="btn btn-secondary">
-                    Back to Dashboard
+                  <Link to="/worker/complaints" className="btn btn-secondary">
+                    Back to Complaints
                   </Link>
                   <button type="submit" className="btn btn-primary" disabled={isUpdating}>
                     {isUpdating ? 'Saving...' : 'Save Task Progress'}

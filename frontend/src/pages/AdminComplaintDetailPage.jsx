@@ -1,8 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
 import { complaintsApi, workersApi } from '../services/api';
 import { CATEGORY_SPECIALIZATION_MAP } from '../constants/categories';
+import ComplaintMap from '../components/ComplaintMap';
+import ComplaintPhotoGallery from '../components/ComplaintPhotoGallery';
+import AdminNavbar from '../components/AdminNavbar';
 
 /**
  * AdminComplaintDetailPage Component
@@ -13,7 +15,6 @@ import { CATEGORY_SPECIALIZATION_MAP } from '../constants/categories';
  */
 function AdminComplaintDetailPage() {
   const { id } = useParams();
-  const { logout } = useAuth();
 
   const [complaint, setComplaint] = useState(null);
   const [workers, setWorkers] = useState([]);
@@ -107,37 +108,17 @@ function AdminComplaintDetailPage() {
 
   return (
     <div className="portal-dashboard-wrapper admin-portal-bg">
-      {/* Top Navbar */}
-      <header className="dashboard-top-navbar admin-navbar-theme">
-        <div className="container dashboard-navbar-inner">
-          <div className="dashboard-brand">
-            <span className="brand-icon admin-icon">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <rect x="3" y="3" width="7" height="7" />
-                <rect x="14" y="3" width="7" height="7" />
-                <rect x="14" y="14" width="7" height="7" />
-                <rect x="3" y="14" width="7" height="7" />
-              </svg>
-            </span>
-            <div>
-              <span className="brand-title">CivicAlert Admin Oversight</span>
-              <span className="portal-badge-pill admin-badge-pill">Grievance Dispatch</span>
-            </div>
-          </div>
-
-          <div className="user-profile-widget">
-            <Link to="/admin/dashboard" className="btn btn-secondary btn-sm">
-              &larr; Back to Admin Dashboard
-            </Link>
-            <button type="button" className="btn btn-secondary btn-sm logout-btn" onClick={logout}>
-              Sign Out
-            </button>
-          </div>
-        </div>
-      </header>
+      <AdminNavbar />
 
       {/* Main Content */}
       <main className="container dashboard-main-content">
+        {/* Back breadcrumb */}
+        <div style={{ marginBottom: '1.25rem' }}>
+          <Link to="/admin/complaints" className="btn btn-secondary btn-sm">
+            &larr; Back to Complaints
+          </Link>
+        </div>
+
         {isLoading ? (
           <div className="dashboard-loading-box">
             <div className="spinner-border"></div>
@@ -147,8 +128,8 @@ function AdminComplaintDetailPage() {
           <div className="track-not-found-card">
             <h3>Complaint Record Not Found</h3>
             <p>{apiError}</p>
-            <Link to="/admin/dashboard" className="btn btn-primary" style={{ marginTop: '1rem' }}>
-              Return to Admin Dashboard
+            <Link to="/admin/complaints" className="btn btn-primary" style={{ marginTop: '1rem' }}>
+              Return to Complaints
             </Link>
           </div>
         ) : (
@@ -175,10 +156,24 @@ function AdminComplaintDetailPage() {
               </div>
 
               <div className="sheet-grid" style={{ gridTemplateColumns: '1fr' }}>
-                <div className="detail-item">
-                  <span className="detail-label">Location / Address</span>
-                  <p className="detail-val location-val">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+
+                {/* Reported Issue Photos Gallery */}
+                <ComplaintPhotoGallery
+                  photos={complaint.photos}
+                  photoPreview={complaint.photoPreview}
+                  title="Reported Issue Photos"
+                />
+
+                {/* Complaint Location Map */}
+                <div className="detail-section-block">
+                  <span className="detail-section-label">Complaint Location</span>
+                  <ComplaintMap
+                    latitude={complaint.latitude}
+                    longitude={complaint.longitude}
+                    locationText={complaint.location}
+                  />
+                  <p className="detail-val location-val" style={{ marginTop: '0.5rem' }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                       <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
                       <circle cx="12" cy="10" r="3" />
                     </svg>
@@ -323,7 +318,7 @@ function AdminComplaintDetailPage() {
                 </div>
 
                 <div className="form-actions-right">
-                  <Link to="/admin/dashboard" className="btn btn-secondary">
+                  <Link to="/admin/complaints" className="btn btn-secondary">
                     Cancel
                   </Link>
                   <button type="submit" className="btn btn-primary" disabled={isSaving}>

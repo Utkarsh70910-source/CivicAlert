@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
 import { complaintsApi } from '../services/api';
+import ComplaintMap from '../components/ComplaintMap';
+import ComplaintPhotoGallery from '../components/ComplaintPhotoGallery';
 
 /**
  * TrackPage Component
@@ -316,16 +318,22 @@ function TrackPage() {
                   </p>
                 </div>
 
-                {complaint.photoPreview && (
-                  <div className="detail-item">
-                    <span className="detail-label">Attached Photo Evidence</span>
-                    <img
-                      src={complaint.photoPreview}
-                      alt="Citizen evidence"
-                      className="track-photo-preview"
-                    />
-                  </div>
-                )}
+                {/* Complaint Photo Gallery */}
+                <ComplaintPhotoGallery
+                  photos={complaint.photos}
+                  photoPreview={complaint.photoPreview}
+                  title="Attached Photo Evidence"
+                />
+
+                {/* Complaint Map */}
+                <div className="detail-section-block" style={{ marginTop: '1.25rem' }}>
+                  <span className="detail-section-label">Incident Map Location</span>
+                  <ComplaintMap
+                    latitude={complaint.latitude}
+                    longitude={complaint.longitude}
+                    locationText={complaint.location}
+                  />
+                </div>
               </div>
 
               {/* Right Column: Municipal Action & Worker Details */}
