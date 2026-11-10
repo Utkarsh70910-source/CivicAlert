@@ -1,3 +1,5 @@
+import { Link } from 'react-router-dom';
+
 /**
  * Footer Component
  * 
@@ -14,7 +16,7 @@ function Footer() {
         <div className="footer-top-grid">
           {/* Brand & Mission column */}
           <div className="footer-brand-col">
-            <div className="footer-brand">
+            <Link to="/citizen" className="footer-brand">
               <span className="brand-icon footer-icon" aria-hidden="true">
                 <svg
                   width="22"
@@ -32,48 +34,35 @@ function Footer() {
                 </svg>
               </span>
               <span className="footer-brand-name">CivicAlert</span>
-            </div>
+            </Link>
             <p className="footer-tagline">
-              A student-built prototype designed to explore how citizens can report,
+              A student-built prototype designed to empower citizens to report,
               track, and solve everyday neighborhood civic issues.
             </p>
             <div className="footer-status-indicator">
               <span className="status-ping"></span>
-              <span>Student Project Prototype</span>
+              <span>Local Milestone Active</span>
             </div>
           </div>
 
-          {/* Navigation Links Column */}
+          {/* Citizen Navigation Links Column */}
           <div className="footer-links-col">
-            <h4 className="footer-col-title">Navigation</h4>
+            <h4 className="footer-col-title">Citizen Services</h4>
             <ul className="footer-links-list">
               <li>
-                <a href="#home">Home</a>
+                <Link to="/citizen">Home</Link>
               </li>
               <li>
-                <a href="#categories">Issue Categories</a>
+                <Link to="/report">Report an Issue</Link>
               </li>
               <li>
-                <a href="#about">About CivicAlert</a>
-              </li>
-            </ul>
-          </div>
-
-          {/* Categories Column */}
-          <div className="footer-links-col">
-            <h4 className="footer-col-title">Issue Categories</h4>
-            <ul className="footer-links-list">
-              <li>
-                <a href="#categories">Roads &amp; Potholes</a>
+                <Link to="/track">Track Complaint</Link>
               </li>
               <li>
-                <a href="#categories">Streetlights</a>
+                <Link to="/">Portal Selection</Link>
               </li>
               <li>
-                <a href="#categories">Garbage &amp; Sanitation</a>
-              </li>
-              <li>
-                <a href="#categories">Water &amp; Drainage</a>
+                <Link to="/track?ref=CA-100201">Sample Tracking Demo</Link>
               </li>
             </ul>
           </div>
@@ -82,12 +71,13 @@ function Footer() {
           <div className="footer-links-col">
             <h4 className="footer-col-title">Project Info</h4>
             <p className="footer-project-info">
-              Full-Stack College Project showcasing React, modular components, responsive CSS, and citizen engagement.
+              Full-Stack College Capstone Project showcasing React 19, Express REST APIs,
+              Role-Based Access Control, and municipal civic operations.
             </p>
             <div className="tech-stack-pills">
               <span className="tech-pill">React 19</span>
-              <span className="tech-pill">Vite</span>
-              <span className="tech-pill">Plain CSS</span>
+              <span className="tech-pill">Express 5</span>
+              <span className="tech-pill">RBAC</span>
             </div>
           </div>
         </div>

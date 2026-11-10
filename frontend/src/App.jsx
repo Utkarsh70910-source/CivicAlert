@@ -1,73 +1,146 @@
-import { useState } from 'react';
+import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom';
+import { AuthProvider } from './context/AuthContext';
+import ProtectedRoute from './components/ProtectedRoute';
 import Navbar from './components/Navbar';
-import Hero from './components/Hero';
-import Categories from './components/Categories';
-import About from './components/About';
 import Footer from './components/Footer';
-import ReportModal from './components/ReportModal';
+
+// Pages
+import LandingPage from './pages/LandingPage';
+import HomePage from './pages/HomePage';
+import CategoriesPage from './pages/CategoriesPage';
+import ReportPage from './pages/ReportPage';
+import TrackPage from './pages/TrackPage';
+import WorkerLoginPage from './pages/WorkerLoginPage';
+import WorkerDashboardPage from './pages/WorkerDashboardPage';
+import WorkerComplaintDetailPage from './pages/WorkerComplaintDetailPage';
+import AdminLoginPage from './pages/AdminLoginPage';
+import AdminDashboardPage from './pages/AdminDashboardPage';
+import AdminComplaintDetailPage from './pages/AdminComplaintDetailPage';
+
 import './App.css';
 
 /**
- * CivicAlert Main Application Component
- * 
- * Assembles the CivicAlert Homepage:
- * - Navbar: Navigation & quick report action
- * - Hero: Mission statement, primary CTA, and live preview card
- * - Categories: 4 key civic issue categories (Roads, Streetlights, Sanitation, Water)
- * - About: 3-step workflow & student capstone mission
- * - Footer: Links, categories summary, and copyright
- * - ReportModal: Interactive placeholder for the upcoming complaint submission system
+ * Layout wrapper that conditionally hides standard citizen Navbar/Footer
+ * on the dedicated portal gateway landing page and specialized full-page dashboards.
  */
-function App() {
-  // State to control modal visibility
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  // State to track which category was clicked (or general report)
-  const [selectedCategory, setSelectedCategory] = useState(null);
-
-  /**
-   * Opens the placeholder report modal.
-   * Can be invoked without arguments (from hero/navbar) or with a specific category name.
-   */
-  const handleOpenReportModal = (categoryName = null) => {
-    setSelectedCategory(categoryName);
-    setIsModalOpen(true);
-  };
-
-  /**
-   * Closes the placeholder modal and resets selected category.
-   */
-  const handleCloseReportModal = () => {
-    setIsModalOpen(false);
-    setSelectedCategory(null);
-  };
+function AppLayout() {
+  const location = useLocation();
+  const isDedicatedPage =
+    location.pathname === '/' ||
+    location.pathname === '/login' ||
+    location.pathname.startsWith('/worker/dashboard') ||
+    location.pathname.startsWith('/worker/complaints') ||
+    location.pathname.startsWith('/admin/dashboard') ||
+    location.pathname.startsWith('/admin/complaints') ||
+    location.pathname.startsWith('/admin/workers');
 
   return (
     <div className="app-layout">
-      {/* 1. Navigation Bar */}
-      <Navbar onOpenReportModal={() => handleOpenReportModal()} />
+      {!isDedicatedPage && <Navbar />}
 
-      {/* Main Content Area */}
-      <main id="main-content">
-        {/* 2. Hero Section */}
-        <Hero onOpenReportModal={() => handleOpenReportModal()} />
+      <main id="main-content" className="app-main">
+        <Routes>
+          {/* Multi-Portal Gateway Landing Page (CUIMS-Inspired) */}
+          <Route path="/" element={<LandingPage />} />
+          <Route path="/login" element={<LandingPage />} />
 
-        {/* 3. Four Civic Categories Section */}
-        <Categories onOpenReportModal={handleOpenReportModal} />
+          {/* Citizen Experience Routes */}
+          <Route path="/citizen" element={<HomePage />} />
+          <Route path="/home" element={<HomePage />} />
+          <Route path="/categories" element={<CategoriesPage />} />
+          <Route path="/report" element={<ReportPage />} />
+          <Route path="/track" element={<TrackPage />} />
 
-        {/* 4. About & How it Works Section */}
-        <About />
+          {/* Staff Authentication Entry Points */}
+          <Route path="/worker/login" element={<WorkerLoginPage />} />
+          <Route path="/admin/login" element={<AdminLoginPage />} />
+
+          {/* Protected Field Worker Portal Routes */}
+          <Route
+            path="/worker/dashboard"
+            element={
+              <ProtectedRoute allowedRoles={['worker']}>
+                <WorkerDashboardPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/worker/complaints/:id"
+            element={
+              <ProtectedRoute allowedRoles={['worker']}>
+                <WorkerComplaintDetailPage />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* Protected Municipal Admin Portal Routes */}
+          <Route
+            path="/admin/dashboard"
+            element={
+              <ProtectedRoute allowedRoles={['admin']}>
+                <AdminDashboardPage initialTab="complaints" />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/complaints"
+            element={
+              <ProtectedRoute allowedRoles={['admin']}>
+                <AdminDashboardPage initialTab="complaints" />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/workers"
+            element={
+              <ProtectedRoute allowedRoles={['admin']}>
+                <AdminDashboardPage initialTab="workers" />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/complaints/:id"
+            element={
+              <ProtectedRoute allowedRoles={['admin']}>
+                <AdminComplaintDetailPage />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* 404 Fallback Route */}
+          <Route
+            path="*"
+            element={
+              <div className="container portal-page-container text-center">
+                <div className="not-found-box">
+                  <h1 className="not-found-code">404</h1>
+                  <h2>Page Not Found</h2>
+                  <p>The requested page does not exist on CivicAlert.</p>
+                  <a href="/" className="btn btn-primary">
+                    Return to Homepage
+                  </a>
+                </div>
+              </div>
+            }
+          />
+        </Routes>
       </main>
 
-      {/* 5. Footer */}
-      <Footer />
-
-      {/* 6. Placeholder Report Dialog */}
-      <ReportModal
-        isOpen={isModalOpen}
-        onClose={handleCloseReportModal}
-        selectedCategory={selectedCategory}
-      />
+      {!isDedicatedPage && <Footer />}
     </div>
+  );
+}
+
+/**
+ * CivicAlert Main Application Root
+ */
+function App() {
+  return (
+    <BrowserRouter>
+      <AuthProvider>
+        <AppLayout />
+      </AuthProvider>
+    </BrowserRouter>
   );
 }
 
