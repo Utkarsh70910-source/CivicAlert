@@ -24,7 +24,8 @@ dotenv.config();
 const express = require('express');
 const cors = require('cors');
 
-// 3. Import route modules
+// 3. Import route modules & database connector
+const { connectDB, getIsConnected } = require('./config/db');
 const authRoutes = require('./routes/authRoutes');
 const complaintRoutes = require('./routes/complaintRoutes');
 const workerRoutes = require('./routes/workerRoutes');
@@ -91,7 +92,8 @@ app.get('/', (req, res) => {
       workers: '/api/workers',
       stats: '/api/stats',
     },
-    mode: process.env.NODE_ENV === 'production' ? 'Production API' : 'Development (In-Memory Mock Persistence)',
+    database: getIsConnected() ? 'MongoDB (Connected)' : 'Local Persistent Storage',
+    mode: process.env.NODE_ENV === 'production' ? 'Production API' : 'Development',
   });
 });
 
@@ -102,6 +104,7 @@ app.get('/api/health', (req, res) => {
     message: 'CivicAlert Backend API is running successfully',
     timestamp: new Date().toISOString(),
     environment: process.env.NODE_ENV || 'development',
+    database: getIsConnected() ? 'MongoDB (Connected)' : 'Local Persistent Storage',
     activeSessionsCount: require('./data/mockData').mockActiveSessions.size,
     totalComplaintsCount: require('./data/mockData').mockComplaints.length,
   });
@@ -135,13 +138,16 @@ app.use((err, req, res, next) => {
 // Start Server
 // -----------------------------------------------------------------------------
 if (require.main === module) {
-  app.listen(PORT, () => {
-    console.log(`===============================================`);
-    console.log(`CivicAlert Backend Server is LIVE!`);
-    console.log(`Port: ${PORT}`);
-    console.log(`API Base URL: http://localhost:${PORT}/api`);
-    console.log(`Health Check: http://localhost:${PORT}/api/health`);
-    console.log(`===============================================`);
+  connectDB().then(() => {
+    app.listen(PORT, () => {
+      console.log(`===============================================`);
+      console.log(`CivicAlert Backend Server is LIVE!`);
+      console.log(`Port: ${PORT}`);
+      console.log(`API Base URL: http://localhost:${PORT}/api`);
+      console.log(`Health Check: http://localhost:${PORT}/api/health`);
+      console.log(`Database: ${getIsConnected() ? 'MongoDB (Connected)' : 'Local Persistent Storage'}`);
+      console.log(`===============================================`);
+    });
   });
 }
 

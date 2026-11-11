@@ -16,6 +16,10 @@ const CATEGORY_SPECIALIZATION_MAP = {
   'Other': 'Admin Review',
 };
 
+const fs = require('fs');
+const path = require('path');
+const STORE_FILE = path.join(__dirname, 'persistent_data.json');
+
 // Initial Mock Users (Admin, Field Workers, Citizen)
 const mockUsers = [
   {
@@ -358,6 +362,53 @@ const mockComplaints = [
 const mockActiveSessions = new Map();
 
 /**
+ * Persists in-memory data to local disk store so data survives server restarts.
+ */
+function saveData() {
+  try {
+    const payload = {
+      users: mockUsers,
+      complaints: mockComplaints,
+      sessions: Array.from(mockActiveSessions.entries()),
+    };
+    fs.writeFileSync(STORE_FILE, JSON.stringify(payload, null, 2), 'utf8');
+  } catch (err) {
+    console.error('[Persistence] Error writing local store:', err.message);
+  }
+}
+
+/**
+ * Loads persisted data from disk if available, otherwise initializes clean store.
+ */
+function loadData() {
+  if (fs.existsSync(STORE_FILE)) {
+    try {
+      const raw = fs.readFileSync(STORE_FILE, 'utf8');
+      const data = JSON.parse(raw);
+      if (Array.isArray(data.users) && data.users.length > 0) {
+        mockUsers.length = 0;
+        mockUsers.push(...data.users);
+      }
+      if (Array.isArray(data.complaints) && data.complaints.length > 0) {
+        mockComplaints.length = 0;
+        mockComplaints.push(...data.complaints);
+      }
+      if (Array.isArray(data.sessions)) {
+        mockActiveSessions.clear();
+        for (const [k, v] of data.sessions) {
+          mockActiveSessions.set(k, v);
+        }
+      }
+    } catch (err) {
+      console.warn('[Persistence] Could not parse persistent_data.json, keeping defaults.');
+    }
+  }
+}
+
+// Automatically load existing persisted data on startup
+loadData();
+
+/**
  * Computes overdue status and days remaining for a complaint
  */
 function enrichComplaint(complaint) {
@@ -427,4 +478,5 @@ module.exports = {
   mockActiveSessions,
   enrichComplaint,
   sanitizeForPublic,
+  saveData,
 };

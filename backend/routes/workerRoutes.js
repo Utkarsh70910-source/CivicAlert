@@ -8,7 +8,16 @@
 
 const express = require('express');
 const router = express.Router();
-const { mockUsers, mockComplaints, mockActiveSessions, CATEGORY_SPECIALIZATION_MAP } = require('../data/mockData');
+const bcrypt = require('bcryptjs');
+const {
+  mockUsers,
+  mockComplaints,
+  mockActiveSessions,
+  saveData,
+  CATEGORY_SPECIALIZATION_MAP,
+} = require('../data/mockData');
+const { User, Complaint, Session } = require('../models');
+const { getIsConnected } = require('../config/db');
 const { authenticate, authorize } = require('../middleware/auth');
 
 /**
@@ -16,7 +25,51 @@ const { authenticate, authorize } = require('../middleware/auth');
  * @desc    Get list of all registered field workers with active task counts
  * @access  Protected (Admin only)
  */
-router.get('/', authenticate, authorize(['admin']), (req, res) => {
+router.get('/', authenticate, authorize(['admin']), async (req, res) => {
+  if (getIsConnected()) {
+    try {
+      const dbWorkers = await User.find({ role: 'worker' }).lean();
+      const workersWithCounts = await Promise.all(
+        dbWorkers.map(async (w) => {
+          const wCustomId = w.customId || w._id.toString();
+          const wWorkerId = w.workerId;
+
+          const activeTasksCount = await Complaint.countDocuments({
+            assignedWorkerId: { $in: [wCustomId, wWorkerId] },
+            status: { $ne: 'Resolved' },
+          });
+
+          const totalCompletedCount = await Complaint.countDocuments({
+            assignedWorkerId: { $in: [wCustomId, wWorkerId] },
+            status: 'Resolved',
+          });
+
+          return {
+            id: wCustomId,
+            workerId: w.workerId,
+            username: w.username,
+            name: w.name,
+            category: w.category || 'General Civic Works',
+            specialization: w.specialization || w.category || 'General Civic Works',
+            status: w.status || 'Active',
+            phone: w.phone,
+            email: w.email,
+            activeTasksCount,
+            totalCompletedCount,
+          };
+        })
+      );
+
+      return res.status(200).json({
+        success: true,
+        count: workersWithCounts.length,
+        workers: workersWithCounts,
+      });
+    } catch (err) {
+      console.error('[Workers GET] MongoDB error:', err.message);
+    }
+  }
+
   const workers = mockUsers
     .filter((u) => u.role === 'worker')
     .map((w) => {
@@ -60,7 +113,7 @@ router.get('/', authenticate, authorize(['admin']), (req, res) => {
  * @desc    Create a new field worker in the municipal system
  * @access  Protected (Admin only)
  */
-router.post('/', authenticate, authorize(['admin']), (req, res) => {
+router.post('/', authenticate, authorize(['admin']), async (req, res) => {
   const { name, category, phone, email, password } = req.body;
 
   if (!name || !name.trim()) {
@@ -72,8 +125,15 @@ router.post('/', authenticate, authorize(['admin']), (req, res) => {
   }
 
   // Count existing workers to auto-generate worker ID like W-105
-  const existingWorkers = mockUsers.filter((u) => u.role === 'worker');
-  const nextWorkerNum = 101 + existingWorkers.length;
+  let nextWorkerNum;
+  if (getIsConnected()) {
+    const count = await User.countDocuments({ role: 'worker' });
+    nextWorkerNum = 101 + count;
+  } else {
+    const existingWorkers = mockUsers.filter((u) => u.role === 'worker');
+    nextWorkerNum = 101 + existingWorkers.length;
+  }
+
   const generatedWorkerId = `W-${nextWorkerNum}`;
   const username = `worker${nextWorkerNum}`;
 
@@ -82,10 +142,15 @@ router.post('/', authenticate, authorize(['admin']), (req, res) => {
     (CATEGORY_SPECIALIZATION_MAP && CATEGORY_SPECIALIZATION_MAP[category.trim()]) ||
     category.trim();
 
+  const plainPassword = password && password.trim() ? password.trim() : 'worker123';
+  const salt = await bcrypt.genSalt(10);
+  const hashedPassword = await bcrypt.hash(plainPassword, salt);
+
   const newWorker = {
     id: `w-${nextWorkerNum}`,
+    customId: `w-${nextWorkerNum}`,
     username,
-    password: password && password.trim() ? password.trim() : 'worker123',
+    password: hashedPassword,
     name: name.trim(),
     role: 'worker',
     workerId: generatedWorkerId,
@@ -96,13 +161,22 @@ router.post('/', authenticate, authorize(['admin']), (req, res) => {
     email: email && email.trim() ? email.trim() : `${username}@civicalert.gov.in`,
   };
 
+  if (getIsConnected()) {
+    try {
+      await User.create(newWorker);
+    } catch (err) {
+      console.error('[Workers Create] MongoDB save error:', err.message);
+    }
+  }
+
   mockUsers.push(newWorker);
+  saveData();
 
   const { password: _, ...sanitizedWorker } = newWorker;
 
   res.status(201).json({
     success: true,
-    message: `Worker ${newWorker.name} (${newWorker.workerId}) registered successfully. Default password: ${newWorker.password}`,
+    message: `Worker ${newWorker.name} (${newWorker.workerId}) registered successfully. Default password: ${plainPassword}`,
     worker: sanitizedWorker,
   });
 });
@@ -112,13 +186,23 @@ router.post('/', authenticate, authorize(['admin']), (req, res) => {
  * @desc    Update worker details (Admin only)
  * @access  Protected (Admin only)
  */
-router.put('/:id', authenticate, authorize(['admin']), (req, res) => {
+router.put('/:id', authenticate, authorize(['admin']), async (req, res) => {
   const targetId = req.params.id;
   const worker = mockUsers.find(
     (u) => (u.id === targetId || u.workerId === targetId) && u.role === 'worker'
   );
 
-  if (!worker) {
+  let mongoWorker = null;
+  if (getIsConnected()) {
+    try {
+      mongoWorker = await User.findOne({
+        role: 'worker',
+        $or: [{ customId: targetId }, { workerId: targetId }],
+      });
+    } catch (_) {}
+  }
+
+  if (!worker && !mongoWorker) {
     return res.status(404).json({ success: false, message: 'Worker not found.' });
   }
 
@@ -128,32 +212,43 @@ router.put('/:id', authenticate, authorize(['admin']), (req, res) => {
     if (!name.trim()) {
       return res.status(400).json({ success: false, message: 'Worker name cannot be empty.' });
     }
-    worker.name = name.trim();
+    if (worker) worker.name = name.trim();
+    if (mongoWorker) mongoWorker.name = name.trim();
   }
 
   if (category !== undefined && category.trim()) {
-    worker.category = category.trim();
-    if (!specialization) {
-      worker.specialization =
-        (CATEGORY_SPECIALIZATION_MAP && CATEGORY_SPECIALIZATION_MAP[category.trim()]) ||
-        category.trim();
+    const spec = specialization ||
+      (CATEGORY_SPECIALIZATION_MAP && CATEGORY_SPECIALIZATION_MAP[category.trim()]) ||
+      category.trim();
+
+    if (worker) {
+      worker.category = category.trim();
+      worker.specialization = spec;
+    }
+    if (mongoWorker) {
+      mongoWorker.category = category.trim();
+      mongoWorker.specialization = spec;
     }
   }
 
   if (specialization !== undefined && specialization.trim()) {
-    worker.specialization = specialization.trim();
+    if (worker) worker.specialization = specialization.trim();
+    if (mongoWorker) mongoWorker.specialization = specialization.trim();
   }
 
   if (phone !== undefined) {
-    worker.phone = phone.trim();
+    if (worker) worker.phone = phone.trim();
+    if (mongoWorker) mongoWorker.phone = phone.trim();
   }
 
   if (email !== undefined) {
-    worker.email = email.trim();
+    if (worker) worker.email = email.trim();
+    if (mongoWorker) mongoWorker.email = email.trim();
   }
 
   if (status !== undefined && status.trim()) {
-    worker.status = status.trim();
+    if (worker) worker.status = status.trim();
+    if (mongoWorker) mongoWorker.status = status.trim();
   }
 
   if (workerId !== undefined && workerId.trim()) {
@@ -161,7 +256,7 @@ router.put('/:id', authenticate, authorize(['admin']), (req, res) => {
     const duplicateWorker = mockUsers.find(
       (u) =>
         u.role === 'worker' &&
-        u.id !== worker.id &&
+        u.id !== (worker?.id || mongoWorker?.customId) &&
         u.workerId &&
         u.workerId.toLowerCase() === trimmedWorkerId.toLowerCase()
     );
@@ -171,14 +266,15 @@ router.put('/:id', authenticate, authorize(['admin']), (req, res) => {
         message: `Worker ID '${trimmedWorkerId}' is already assigned to another worker.`,
       });
     }
-    worker.workerId = trimmedWorkerId;
+    if (worker) worker.workerId = trimmedWorkerId;
+    if (mongoWorker) mongoWorker.workerId = trimmedWorkerId;
   }
 
   if (username !== undefined && username.trim()) {
     const trimmedUsername = username.trim();
     const duplicateUser = mockUsers.find(
       (u) =>
-        u.id !== worker.id &&
+        u.id !== (worker?.id || mongoWorker?.customId) &&
         u.username.toLowerCase() === trimmedUsername.toLowerCase()
     );
     if (duplicateUser) {
@@ -187,26 +283,46 @@ router.put('/:id', authenticate, authorize(['admin']), (req, res) => {
         message: `Username '${trimmedUsername}' is already taken.`,
       });
     }
-    worker.username = trimmedUsername;
+    if (worker) worker.username = trimmedUsername;
+    if (mongoWorker) mongoWorker.username = trimmedUsername;
   }
 
   if (password && password.trim()) {
-    worker.password = password.trim();
+    const salt = await bcrypt.genSalt(10);
+    const hashed = await bcrypt.hash(password.trim(), salt);
+    if (worker) worker.password = hashed;
+    if (mongoWorker) mongoWorker.password = hashed;
   }
 
   // Synchronize complaints assigned to this worker so name/phone remain consistent
+  const activeWorkerName = (worker || mongoWorker).name;
+  const activeWorkerPhone = (worker || mongoWorker).phone;
+  const activeWorkerId = (worker || mongoWorker).id || (worker || mongoWorker).customId;
+  const activeWorkerCode = (worker || mongoWorker).workerId;
+
   mockComplaints.forEach((c) => {
-    if (c.assignedWorkerId === worker.id || c.assignedWorkerId === worker.workerId) {
-      c.assignedWorkerName = worker.name;
-      if (worker.phone) c.assignedWorkerPhone = worker.phone;
+    if (c.assignedWorkerId === activeWorkerId || c.assignedWorkerId === activeWorkerCode) {
+      c.assignedWorkerName = activeWorkerName;
+      if (activeWorkerPhone) c.assignedWorkerPhone = activeWorkerPhone;
     }
   });
 
-  const { password: _, ...sanitizedWorker } = worker;
+  if (getIsConnected()) {
+    if (mongoWorker) await mongoWorker.save();
+    await Complaint.updateMany(
+      { assignedWorkerId: { $in: [activeWorkerId, activeWorkerCode] } },
+      { assignedWorkerName: activeWorkerName, assignedWorkerPhone: activeWorkerPhone }
+    );
+  }
+
+  saveData();
+
+  const finalWorker = worker || mongoWorker.toSanitized();
+  const { password: _, ...sanitizedWorker } = finalWorker;
 
   res.status(200).json({
     success: true,
-    message: `Worker ${worker.name} (${worker.workerId}) updated successfully.`,
+    message: `Worker ${sanitizedWorker.name} (${sanitizedWorker.workerId}) updated successfully.`,
     worker: sanitizedWorker,
   });
 });
@@ -216,47 +332,81 @@ router.put('/:id', authenticate, authorize(['admin']), (req, res) => {
  * @desc    Delete a field worker from the system (Admin only)
  * @access  Protected (Admin only)
  */
-router.delete('/:id', authenticate, authorize(['admin']), (req, res) => {
+router.delete('/:id', authenticate, authorize(['admin']), async (req, res) => {
   const targetId = req.params.id;
   const workerIndex = mockUsers.findIndex(
     (u) => (u.id === targetId || u.workerId === targetId) && u.role === 'worker'
   );
 
-  if (workerIndex === -1) {
+  let mongoWorker = null;
+  if (getIsConnected()) {
+    try {
+      mongoWorker = await User.findOne({
+        role: 'worker',
+        $or: [{ customId: targetId }, { workerId: targetId }],
+      });
+    } catch (_) {}
+  }
+
+  if (workerIndex === -1 && !mongoWorker) {
     return res.status(404).json({ success: false, message: 'Worker not found.' });
   }
 
-  const worker = mockUsers[workerIndex];
+  const worker = workerIndex !== -1 ? mockUsers[workerIndex] : mongoWorker;
+  const workerKey = worker.id || worker.customId;
+  const workerCode = worker.workerId;
 
   // Active assignment check: Do NOT delete if worker has unresolved assigned complaints
-  const activeComplaints = mockComplaints.filter(
-    (c) =>
-      (c.assignedWorkerId === worker.id || c.assignedWorkerId === worker.workerId) &&
-      c.status !== 'Resolved'
-  );
+  let activeCount = 0;
+  if (getIsConnected()) {
+    activeCount = await Complaint.countDocuments({
+      assignedWorkerId: { $in: [workerKey, workerCode] },
+      status: { $ne: 'Resolved' },
+    });
+  } else {
+    activeCount = mockComplaints.filter(
+      (c) =>
+        (c.assignedWorkerId === workerKey || c.assignedWorkerId === workerCode) &&
+        c.status !== 'Resolved'
+    ).length;
+  }
 
-  if (activeComplaints.length > 0) {
+  if (activeCount > 0) {
     return res.status(400).json({
       success: false,
-      message: `Cannot delete worker ${worker.name} (${worker.workerId}): Worker currently has ${activeComplaints.length} active assigned complaint(s). Please reassign them in Complaints Management first.`,
-      activeTasksCount: activeComplaints.length,
+      message: `Cannot delete worker ${worker.name} (${worker.workerId}): Worker currently has ${activeCount} active assigned complaint(s). Please reassign them in Complaints Management first.`,
+      activeTasksCount: activeCount,
     });
   }
 
   // Remove worker from mockUsers
-  mockUsers.splice(workerIndex, 1);
+  if (workerIndex !== -1) {
+    mockUsers.splice(workerIndex, 1);
+  }
+
+  // Remove worker from MongoDB
+  if (getIsConnected()) {
+    try {
+      await User.deleteOne({ role: 'worker', $or: [{ customId: targetId }, { workerId: targetId }] });
+      await Session.deleteMany({ userId: { $in: [workerKey, workerCode] } });
+    } catch (err) {
+      console.error('[Workers Delete] MongoDB error:', err.message);
+    }
+  }
 
   // Invalidate any active session tokens for this worker
   for (const [token, sessionUser] of mockActiveSessions.entries()) {
-    if (sessionUser.id === worker.id || sessionUser.workerId === worker.workerId) {
+    if (sessionUser.id === workerKey || sessionUser.workerId === workerCode) {
       mockActiveSessions.delete(token);
     }
   }
 
+  saveData();
+
   res.status(200).json({
     success: true,
     message: `Worker ${worker.name} (${worker.workerId}) deleted successfully.`,
-    deletedWorkerId: worker.id,
+    deletedWorkerId: workerKey,
   });
 });
 

@@ -12,12 +12,16 @@
 
 const express = require('express');
 const router = express.Router();
+const mongoose = require('mongoose');
 const {
   mockComplaints,
   mockUsers,
   enrichComplaint,
   sanitizeForPublic,
+  saveData,
 } = require('../data/mockData');
+const { Complaint, User } = require('../models');
+const { getIsConnected } = require('../config/db');
 const { authenticate, authorize, optionalAuth } = require('../middleware/auth');
 
 const VALID_CATEGORIES = [
@@ -35,9 +39,48 @@ const VALID_STATUSES = ['Submitted', 'In Progress', 'Under Review', 'Resolved'];
  * @desc    Get complaints list (Admin: all complaints; Worker: assigned complaints; Citizen: their complaints)
  * @access  Protected
  */
-router.get('/', authenticate, (req, res) => {
+router.get('/', authenticate, async (req, res) => {
   const { role, id: userId, workerId, name, phone } = req.user;
   const { status, category, overdue } = req.query;
+
+  if (getIsConnected()) {
+    try {
+      let filter = {};
+      if (role === 'admin') {
+        if (status && status !== 'All') filter.status = status;
+        if (category && category !== 'All') filter.category = category;
+      } else if (role === 'worker') {
+        const workerKey = workerId || userId;
+        filter.$or = [{ assignedWorkerId: userId }, { assignedWorkerId: workerKey }];
+        if (status && status !== 'All') filter.status = status;
+      } else if (role === 'citizen') {
+        const citizenFilters = [{ citizenId: userId }];
+        if (name) citizenFilters.push({ citizenName: name });
+        if (phone) citizenFilters.push({ citizenPhone: phone });
+        filter.$or = citizenFilters;
+      } else {
+        return res.status(403).json({
+          success: false,
+          message: 'Access denied: Unknown user role.',
+        });
+      }
+
+      const docs = await Complaint.find(filter).sort({ createdAt: -1 });
+      let enrichedResults = docs.map((doc) => doc.enrich());
+
+      if (role === 'admin' && overdue === 'true') {
+        enrichedResults = enrichedResults.filter((c) => c.isOverdue);
+      }
+
+      return res.status(200).json({
+        success: true,
+        count: enrichedResults.length,
+        complaints: enrichedResults,
+      });
+    } catch (err) {
+      console.error('[Complaints GET] MongoDB query error:', err.message);
+    }
+  }
 
   let results = [...mockComplaints];
 
@@ -94,18 +137,29 @@ router.get('/', authenticate, (req, res) => {
 /**
  * @route   GET /api/complaints/my
  * @desc    Get complaints belonging to the authenticated citizen.
- *          Uses citizenId (most secure), then falls back to name/phone for
- *          legacy complaints submitted before citizen accounts existed.
  * @access  Protected (Citizen only)
- *
- * NOTE FOR VIVA (Security):
- * - Backend enforces identity: the citizenId comes from the validated session,
- *   NOT from the query string. A citizen cannot see another citizen's data by
- *   changing a URL parameter.
- * - Admin and worker roles are explicitly rejected here (403).
  */
-router.get('/my', authenticate, authorize(['citizen']), (req, res) => {
+router.get('/my', authenticate, authorize(['citizen']), async (req, res) => {
   const { id: userId, name, phone } = req.user;
+
+  if (getIsConnected()) {
+    try {
+      const citizenFilters = [{ citizenId: userId }];
+      if (name) citizenFilters.push({ citizenName: name });
+      if (phone) citizenFilters.push({ citizenPhone: phone });
+
+      const docs = await Complaint.find({ $or: citizenFilters }).sort({ createdAt: -1 });
+      const enrichedResults = docs.map((doc) => doc.enrich());
+
+      return res.status(200).json({
+        success: true,
+        count: enrichedResults.length,
+        complaints: enrichedResults,
+      });
+    } catch (err) {
+      console.error('[Complaints /my] MongoDB error:', err.message);
+    }
+  }
 
   const myComplaints = mockComplaints.filter(
     (c) =>
@@ -128,7 +182,7 @@ router.get('/my', authenticate, authorize(['citizen']), (req, res) => {
  * @desc    Submit a new citizen civic issue report
  * @access  Public (Citizen or Guest)
  */
-router.post('/', optionalAuth, (req, res) => {
+router.post('/', optionalAuth, async (req, res) => {
   const {
     category,
     location,
@@ -173,13 +227,27 @@ router.post('/', optionalAuth, (req, res) => {
 
   // Generate unique Reference ID (e.g. CA-492817)
   let generatedRefId;
-  do {
+  let isUnique = false;
+  while (!isUnique) {
     const randomDigits = Math.floor(100000 + Math.random() * 900000);
     generatedRefId = `CA-${randomDigits}`;
-  } while (mockComplaints.some((c) => c.referenceId === generatedRefId));
 
+    if (getIsConnected()) {
+      try {
+        const exists = await Complaint.findOne({ referenceId: generatedRefId });
+        if (!exists) isUnique = true;
+      } catch (_) {
+        isUnique = !mockComplaints.some((c) => c.referenceId === generatedRefId);
+      }
+    } else {
+      isUnique = !mockComplaints.some((c) => c.referenceId === generatedRefId);
+    }
+  }
+
+  const newId = `cmp-${Date.now()}`;
   const newComplaint = {
-    id: `cmp-${Date.now()}`,
+    id: newId,
+    customId: newId,
     referenceId: generatedRefId,
     category: category.trim(),
     title: `${category.trim()} reported at ${location.trim().slice(0, 30)}`,
@@ -207,8 +275,17 @@ router.post('/', optionalAuth, (req, res) => {
     resolvedAt: null,
   };
 
-  // Prepend to in-memory store
+  if (getIsConnected()) {
+    try {
+      await Complaint.create(newComplaint);
+    } catch (err) {
+      console.error('[Complaints Create] Error saving to MongoDB:', err.message);
+    }
+  }
+
+  // Prepend to in-memory store and persist
   mockComplaints.unshift(newComplaint);
+  saveData();
 
   res.status(201).json({
     success: true,
@@ -223,12 +300,37 @@ router.post('/', optionalAuth, (req, res) => {
  * @desc    Track/View a specific complaint by ID or Reference ID (e.g. CA-100201)
  * @access  Public for tracking (sanitized) / Protected for full role details
  */
-router.get('/:id', optionalAuth, (req, res) => {
+router.get('/:id', optionalAuth, async (req, res) => {
   const searchId = req.params.id.trim().toLowerCase();
 
-  const complaint = mockComplaints.find(
-    (c) => c.id.toLowerCase() === searchId || c.referenceId.toLowerCase() === searchId
-  );
+  let complaint = null;
+
+  if (getIsConnected()) {
+    try {
+      const orConditions = [
+        { referenceId: new RegExp(`^${searchId}$`, 'i') },
+        { customId: new RegExp(`^${searchId}$`, 'i') },
+      ];
+      if (mongoose.isValidObjectId(searchId)) {
+        orConditions.push({ _id: searchId });
+      }
+      const doc = await Complaint.findOne({ $or: orConditions });
+      if (doc) {
+        complaint = doc.enrich();
+      }
+    } catch (err) {
+      console.error('[Complaints /:id] MongoDB lookup error:', err.message);
+    }
+  }
+
+  if (!complaint) {
+    const raw = mockComplaints.find(
+      (c) => c.id.toLowerCase() === searchId || c.referenceId.toLowerCase() === searchId
+    );
+    if (raw) {
+      complaint = enrichComplaint(raw);
+    }
+  }
 
   if (!complaint) {
     return res.status(404).json({
@@ -314,26 +416,42 @@ router.get('/:id', optionalAuth, (req, res) => {
  * @desc    Update complaint status, resolution notes, and resolution photo
  * @access  Protected (Worker assigned or Admin)
  */
-router.patch('/:id/status', authenticate, authorize(['worker', 'admin']), (req, res) => {
+router.patch('/:id/status', authenticate, authorize(['worker', 'admin']), async (req, res) => {
   const searchId = req.params.id.trim().toLowerCase();
   const { status, resolutionNotes, resolutionPhoto } = req.body;
 
-  const complaint = mockComplaints.find(
+  let complaint = mockComplaints.find(
     (c) => c.id.toLowerCase() === searchId || c.referenceId.toLowerCase() === searchId
   );
 
-  if (!complaint) {
+  let mongoDoc = null;
+  if (getIsConnected()) {
+    try {
+      const orConditions = [
+        { referenceId: new RegExp(`^${searchId}$`, 'i') },
+        { customId: new RegExp(`^${searchId}$`, 'i') },
+      ];
+      if (mongoose.isValidObjectId(searchId)) {
+        orConditions.push({ _id: searchId });
+      }
+      mongoDoc = await Complaint.findOne({ $or: orConditions });
+    } catch (_) {}
+  }
+
+  if (!complaint && !mongoDoc) {
     return res.status(404).json({
       success: false,
       message: 'Complaint not found.',
     });
   }
 
+  const assignedWorkerId = complaint ? complaint.assignedWorkerId : mongoDoc.assignedWorkerId;
+
   // Worker permission check: worker can only update their own assigned complaints
   if (req.user.role === 'worker') {
     const isAssigned =
-      complaint.assignedWorkerId === req.user.id ||
-      complaint.assignedWorkerId === req.user.workerId;
+      assignedWorkerId === req.user.id ||
+      assignedWorkerId === req.user.workerId;
 
     if (!isAssigned) {
       return res.status(403).json({
@@ -351,29 +469,58 @@ router.patch('/:id/status', authenticate, authorize(['worker', 'admin']), (req, 
     });
   }
 
-  // Apply updates
+  let resolvedAtVal = null;
   if (status) {
-    complaint.status = status;
-    if (status === 'Resolved' && !complaint.resolvedAt) {
-      complaint.resolvedAt = new Date().toISOString();
-    } else if (status !== 'Resolved') {
-      complaint.resolvedAt = null;
+    if (status === 'Resolved') {
+      resolvedAtVal = new Date().toISOString();
     }
   }
 
-  if (resolutionNotes !== undefined) {
-    complaint.resolutionNotes = resolutionNotes;
+  // Update in-memory complaint
+  if (complaint) {
+    if (status) {
+      complaint.status = status;
+      if (status === 'Resolved' && !complaint.resolvedAt) {
+        complaint.resolvedAt = resolvedAtVal;
+      } else if (status !== 'Resolved') {
+        complaint.resolvedAt = null;
+      }
+    }
+    if (resolutionNotes !== undefined) {
+      complaint.resolutionNotes = resolutionNotes;
+    }
+    if (resolutionPhoto !== undefined) {
+      complaint.resolutionPhoto = resolutionPhoto;
+    }
   }
 
-  if (resolutionPhoto !== undefined) {
-    complaint.resolutionPhoto = resolutionPhoto;
+  // Update in MongoDB
+  if (getIsConnected() && mongoDoc) {
+    try {
+      if (status) {
+        mongoDoc.status = status;
+        if (status === 'Resolved') {
+          mongoDoc.resolvedAt = new Date();
+        } else {
+          mongoDoc.resolvedAt = null;
+        }
+      }
+      if (resolutionNotes !== undefined) mongoDoc.resolutionNotes = resolutionNotes;
+      if (resolutionPhoto !== undefined) mongoDoc.resolutionPhoto = resolutionPhoto;
+      await mongoDoc.save();
+    } catch (err) {
+      console.error('[Complaints Status] MongoDB save error:', err.message);
+    }
   }
 
-  const enriched = enrichComplaint(complaint);
+  saveData();
+
+  const finalComplaint = complaint || (mongoDoc ? mongoDoc.enrich() : null);
+  const enriched = enrichComplaint(finalComplaint);
 
   res.status(200).json({
     success: true,
-    message: `Complaint status updated to '${complaint.status}' successfully.`,
+    message: `Complaint status updated to '${finalComplaint.status}' successfully.`,
     complaint: enriched,
   });
 });
@@ -383,7 +530,7 @@ router.patch('/:id/status', authenticate, authorize(['worker', 'admin']), (req, 
  * @desc    Admin assigns a complaint to a field worker & sets expected completion date
  * @access  Protected (Admin only)
  */
-router.patch('/:id/assign', authenticate, authorize(['admin']), (req, res) => {
+router.patch('/:id/assign', authenticate, authorize(['admin']), async (req, res) => {
   const searchId = req.params.id.trim().toLowerCase();
   const { workerId, expectedCompletionDate } = req.body;
 
@@ -394,23 +541,53 @@ router.patch('/:id/assign', authenticate, authorize(['admin']), (req, res) => {
     });
   }
 
-  const complaint = mockComplaints.find(
+  let complaint = mockComplaints.find(
     (c) => c.id.toLowerCase() === searchId || c.referenceId.toLowerCase() === searchId
   );
 
-  if (!complaint) {
+  let mongoDoc = null;
+  if (getIsConnected()) {
+    try {
+      const orConditions = [
+        { referenceId: new RegExp(`^${searchId}$`, 'i') },
+        { customId: new RegExp(`^${searchId}$`, 'i') },
+      ];
+      if (mongoose.isValidObjectId(searchId)) {
+        orConditions.push({ _id: searchId });
+      }
+      mongoDoc = await Complaint.findOne({ $or: orConditions });
+    } catch (_) {}
+  }
+
+  if (!complaint && !mongoDoc) {
     return res.status(404).json({
       success: false,
       message: 'Complaint not found.',
     });
   }
 
-  // Look up worker in mockUsers
-  const worker = mockUsers.find(
-    (u) =>
-      u.role === 'worker' &&
-      (u.id === workerId || (u.workerId && u.workerId.toLowerCase() === workerId.toLowerCase()))
-  );
+  // Look up worker in MongoDB or mockUsers
+  let worker = null;
+  if (getIsConnected()) {
+    try {
+      const dbWorker = await User.findOne({
+        role: 'worker',
+        $or: [
+          { customId: workerId },
+          { workerId: new RegExp(`^${workerId}$`, 'i') },
+        ],
+      });
+      if (dbWorker) worker = dbWorker.toSanitized();
+    } catch (_) {}
+  }
+
+  if (!worker) {
+    worker = mockUsers.find(
+      (u) =>
+        u.role === 'worker' &&
+        (u.id === workerId || (u.workerId && u.workerId.toLowerCase() === workerId.toLowerCase()))
+    );
+  }
 
   if (!worker) {
     return res.status(404).json({
@@ -419,28 +596,52 @@ router.patch('/:id/assign', authenticate, authorize(['admin']), (req, res) => {
     });
   }
 
-  // Assign worker
-  complaint.assignedWorkerId = worker.id;
-  complaint.assignedWorkerName = worker.name;
-  complaint.assignedWorkerPhone = worker.phone || '+91 98765 00000';
+  const assignedWorkerId = worker.id || worker.customId;
+  const assignedWorkerName = worker.name;
+  const assignedWorkerPhone = worker.phone || '+91 98765 00000';
 
-  if (expectedCompletionDate) {
-    complaint.expectedCompletionDate = expectedCompletionDate;
+  if (complaint) {
+    complaint.assignedWorkerId = assignedWorkerId;
+    complaint.assignedWorkerName = assignedWorkerName;
+    complaint.assignedWorkerPhone = assignedWorkerPhone;
+    if (expectedCompletionDate) {
+      complaint.expectedCompletionDate = expectedCompletionDate;
+    }
+    if (complaint.status === 'Submitted') {
+      complaint.status = 'In Progress';
+    }
   }
 
-  // Move status from Submitted to In Progress automatically
-  if (complaint.status === 'Submitted') {
-    complaint.status = 'In Progress';
+  if (getIsConnected() && mongoDoc) {
+    try {
+      mongoDoc.assignedWorkerId = assignedWorkerId;
+      mongoDoc.assignedWorkerName = assignedWorkerName;
+      mongoDoc.assignedWorkerPhone = assignedWorkerPhone;
+      if (expectedCompletionDate) {
+        mongoDoc.expectedCompletionDate = expectedCompletionDate;
+      }
+      if (mongoDoc.status === 'Submitted') {
+        mongoDoc.status = 'In Progress';
+      }
+      await mongoDoc.save();
+    } catch (err) {
+      console.error('[Complaints Assign] MongoDB save error:', err.message);
+    }
   }
 
-  const enriched = enrichComplaint(complaint);
+  saveData();
+
+  const finalComplaint = complaint || (mongoDoc ? mongoDoc.enrich() : null);
+  const enriched = enrichComplaint(finalComplaint);
 
   res.status(200).json({
     success: true,
-    message: `Complaint ${complaint.referenceId} successfully assigned to ${worker.name} (${worker.workerId}).`,
+    message: `Complaint ${finalComplaint.referenceId} successfully assigned to ${worker.name} (${worker.workerId}).`,
     complaint: enriched,
   });
 });
+
+module.exports = router;
 
 module.exports = router;
 

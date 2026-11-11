@@ -20,54 +20,95 @@
  */
 
 const { mockUsers, mockActiveSessions } = require('../data/mockData');
+const { Session, User } = require('../models');
+const { getIsConnected } = require('../config/db');
 
 /**
  * Authentication Middleware:
  * Protects endpoints by verifying identity.
  */
-function authenticate(req, res, next) {
-  const authHeader = req.headers.authorization || req.headers.Authorization;
+async function authenticate(req, res, next) {
+  try {
+    const authHeader = req.headers.authorization || req.headers.Authorization;
 
-  if (!authHeader) {
-    return res.status(401).json({
+    if (!authHeader) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication failed: No authorization token provided. Please log in.',
+      });
+    }
+
+    // Token expected as "Bearer <token>" or raw token
+    const token = authHeader.startsWith('Bearer ')
+      ? authHeader.slice(7).trim()
+      : authHeader.trim();
+
+    if (!token) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication failed: Invalid authorization header format.',
+      });
+    }
+
+    let user = null;
+
+    // 1. Check MongoDB session collection if connected
+    if (getIsConnected()) {
+      try {
+        const session = await Session.findOne({ token }).lean();
+        if (session && session.user) {
+          user = session.user;
+        }
+      } catch (err) {
+        console.error('[Auth Middleware] Session lookup error:', err.message);
+      }
+    }
+
+    // 2. Check in-memory / local persistent session store
+    if (!user) {
+      user = mockActiveSessions.get(token);
+    }
+
+    // 3. Fallback check for dev/testing tokens e.g. "dev-token-admin-1" or "dev-token-w-101"
+    if (!user && token.startsWith('dev-token-')) {
+      const userId = token.replace('dev-token-', '');
+      if (getIsConnected()) {
+        try {
+          const dbUser = await User.findOne({
+            $or: [
+              { customId: userId },
+              { workerId: new RegExp(`^${userId}$`, 'i') },
+              { username: userId.toLowerCase() },
+            ],
+          });
+          if (dbUser) {
+            user = dbUser.toSanitized();
+          }
+        } catch (_) {}
+      }
+      if (!user) {
+        user = mockUsers.find((u) => u.id === userId || u.workerId?.toLowerCase() === userId.toLowerCase());
+      }
+    }
+
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication failed: Session expired or invalid token. Please log in again.',
+      });
+    }
+
+    // Attach sanitized user to request object (NEVER attach password)
+    const { password, ...sanitizedUser } = user;
+    req.user = sanitizedUser;
+
+    next();
+  } catch (err) {
+    return res.status(500).json({
       success: false,
-      message: 'Authentication failed: No authorization token provided. Please log in.',
+      message: 'Internal server error during authentication.',
     });
   }
-
-  // Token expected as "Bearer <token>" or raw token
-  const token = authHeader.startsWith('Bearer ')
-    ? authHeader.slice(7).trim()
-    : authHeader.trim();
-
-  if (!token) {
-    return res.status(401).json({
-      success: false,
-      message: 'Authentication failed: Invalid authorization header format.',
-    });
-  }
-
-  // 1. Check in-memory active session map
-  let user = mockActiveSessions.get(token);
-
-  // 2. Fallback check for dev/testing tokens e.g. "dev-token-admin-1" or "dev-token-w-101"
-  if (!user && token.startsWith('dev-token-')) {
-    const userId = token.replace('dev-token-', '');
-    user = mockUsers.find((u) => u.id === userId || u.workerId?.toLowerCase() === userId.toLowerCase());
-  }
-
-  if (!user) {
-    return res.status(401).json({
-      success: false,
-      message: 'Authentication failed: Session expired or invalid token. Please log in again.',
-    });
-  }
-
-  // Attach sanitized user to request object (NEVER attach password)
-  const { password, ...sanitizedUser } = user;
-  req.user = sanitizedUser;
-
-  next();
 }
 
 /**
@@ -98,25 +139,57 @@ function authorize(allowedRoles = []) {
  * Optional Authentication Middleware:
  * Inspects token if provided, but does not block if missing.
  */
-function optionalAuth(req, res, next) {
-  const authHeader = req.headers.authorization || req.headers.Authorization;
+async function optionalAuth(req, res, next) {
+  try {
+    const authHeader = req.headers.authorization || req.headers.Authorization;
 
-  if (authHeader) {
-    const token = authHeader.startsWith('Bearer ')
-      ? authHeader.slice(7).trim()
-      : authHeader.trim();
+    if (authHeader) {
+      const token = authHeader.startsWith('Bearer ')
+        ? authHeader.slice(7).trim()
+        : authHeader.trim();
 
-    let user = mockActiveSessions.get(token);
-    if (!user && token.startsWith('dev-token-')) {
-      const userId = token.replace('dev-token-', '');
-      user = mockUsers.find((u) => u.id === userId || u.workerId?.toLowerCase() === userId.toLowerCase());
+      let user = null;
+
+      if (getIsConnected()) {
+        try {
+          const session = await Session.findOne({ token }).lean();
+          if (session && session.user) {
+            user = session.user;
+          }
+        } catch (_) {}
+      }
+
+      if (!user) {
+        user = mockActiveSessions.get(token);
+      }
+
+      if (!user && token.startsWith('dev-token-')) {
+        const userId = token.replace('dev-token-', '');
+        if (getIsConnected()) {
+          try {
+            const dbUser = await User.findOne({
+              $or: [
+                { customId: userId },
+                { workerId: new RegExp(`^${userId}$`, 'i') },
+                { username: userId.toLowerCase() },
+              ],
+            });
+            if (dbUser) {
+              user = dbUser.toSanitized();
+            }
+          } catch (_) {}
+        }
+        if (!user) {
+          user = mockUsers.find((u) => u.id === userId || u.workerId?.toLowerCase() === userId.toLowerCase());
+        }
+      }
+
+      if (user) {
+        const { password, ...sanitizedUser } = user;
+        req.user = sanitizedUser;
+      }
     }
-
-    if (user) {
-      const { password, ...sanitizedUser } = user;
-      req.user = sanitizedUser;
-    }
-  }
+  } catch (_) {}
 
   next();
 }

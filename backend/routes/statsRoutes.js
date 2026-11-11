@@ -8,6 +8,8 @@
 const express = require('express');
 const router = express.Router();
 const { mockComplaints, mockUsers, enrichComplaint } = require('../data/mockData');
+const { Complaint, User } = require('../models');
+const { getIsConnected } = require('../config/db');
 const { authenticate, authorize } = require('../middleware/auth');
 
 /**
@@ -15,7 +17,58 @@ const { authenticate, authorize } = require('../middleware/auth');
  * @desc    Get aggregate statistics for complaints and workers
  * @access  Protected (Admin only)
  */
-router.get('/', authenticate, authorize(['admin']), (req, res) => {
+router.get('/', authenticate, authorize(['admin']), async (req, res) => {
+  if (getIsConnected()) {
+    try {
+      const dbComplaints = await Complaint.find().lean();
+      const enrichedList = dbComplaints.map((c) => {
+        let daysRemaining = null;
+        let isOverdue = false;
+        if (c.expectedCompletionDate && c.status !== 'Resolved') {
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+          const targetDate = new Date(c.expectedCompletionDate);
+          targetDate.setHours(0, 0, 0, 0);
+          const diffTime = targetDate.getTime() - today.getTime();
+          daysRemaining = Math.round(diffTime / (1000 * 60 * 60 * 24));
+          isOverdue = daysRemaining < 0;
+        }
+        return { ...c, daysRemaining, isOverdue };
+      });
+
+      const totalComplaints = enrichedList.length;
+      const submittedCount = enrichedList.filter((c) => c.status === 'Submitted').length;
+      const underReviewCount = enrichedList.filter((c) => c.status === 'Under Review').length;
+      const inProgressCount = enrichedList.filter((c) => c.status === 'In Progress').length;
+      const resolvedCount = enrichedList.filter((c) => c.status === 'Resolved').length;
+      const overdueCount = enrichedList.filter((c) => c.isOverdue).length;
+
+      const totalWorkers = await User.countDocuments({ role: 'worker' });
+
+      // Breakdown by category
+      const categoryBreakdown = {};
+      enrichedList.forEach((c) => {
+        categoryBreakdown[c.category] = (categoryBreakdown[c.category] || 0) + 1;
+      });
+
+      return res.status(200).json({
+        success: true,
+        stats: {
+          totalComplaints,
+          submittedCount,
+          underReviewCount,
+          inProgressCount,
+          resolvedCount,
+          overdueCount,
+          totalWorkers,
+          categoryBreakdown,
+        },
+      });
+    } catch (err) {
+      console.error('[Stats GET] MongoDB error:', err.message);
+    }
+  }
+
   const enrichedList = mockComplaints.map(enrichComplaint);
 
   const totalComplaints = enrichedList.length;
