@@ -69,13 +69,41 @@ function AppLayout() {
           <Route path="/" element={<LandingPage />} />
           <Route path="/login" element={<LandingPage />} />
 
-          {/* ── Citizen Experience Routes ── */}
-          <Route path="/citizen" element={<HomePage />} />
-          <Route path="/home" element={<HomePage />} />
+          {/* ── Citizen Experience Routes (require citizen auth) ── */}
+          <Route
+            path="/citizen"
+            element={
+              <ProtectedRoute allowedRoles={['citizen']}>
+                <HomePage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/home"
+            element={
+              <ProtectedRoute allowedRoles={['citizen']}>
+                <HomePage />
+              </ProtectedRoute>
+            }
+          />
           <Route path="/categories" element={<CategoriesPage />} />
-          <Route path="/report" element={<ReportPage />} />
+          <Route
+            path="/report"
+            element={
+              <ProtectedRoute allowedRoles={['citizen']}>
+                <ReportPage />
+              </ProtectedRoute>
+            }
+          />
           <Route path="/track" element={<TrackPage />} />
-          <Route path="/citizen/report" element={<ReportPage />} />
+          <Route
+            path="/citizen/report"
+            element={
+              <ProtectedRoute allowedRoles={['citizen']}>
+                <ReportPage />
+              </ProtectedRoute>
+            }
+          />
           <Route path="/citizen/track" element={<TrackPage />} />
 
           {/* ── Citizen Authentication (standalone pages, no citizen navbar) ── */}

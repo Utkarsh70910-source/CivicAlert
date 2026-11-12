@@ -64,6 +64,11 @@ function LandingPage() {
                   Go to Dashboard &rarr;
                 </Link>
               )}
+              {role === 'citizen' && (
+                <Link to="/citizen" className="btn btn-primary">
+                  Go to Citizen Home &rarr;
+                </Link>
+              )}
               <button type="button" className="btn btn-secondary" onClick={logout}>
                 Sign Out
               </button>
@@ -90,9 +95,15 @@ function LandingPage() {
             </p>
 
             <div className="portal-card-action">
-              <Link to="/citizen" className="btn btn-primary btn-block btn-portal-action">
-                Enter Citizen Portal
-              </Link>
+              {isAuthenticated && role === 'citizen' ? (
+                <Link to="/citizen" className="btn btn-primary btn-block btn-portal-action">
+                  Enter Citizen Portal
+                </Link>
+              ) : (
+                <Link to="/citizen/signin" className="btn btn-primary btn-block btn-portal-action">
+                  Enter Citizen Portal
+                </Link>
+              )}
             </div>
           </div>
 

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
 /**
@@ -11,7 +11,12 @@ import { useAuth } from '../context/AuthContext';
  */
 function CitizenSignInPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { login } = useAuth();
+
+  // Where to send the citizen after a successful sign-in.
+  // Falls back to /citizen (home) if no ?next= param is present.
+  const nextPath = searchParams.get('next') || '/citizen';
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -40,14 +45,14 @@ function CitizenSignInPage() {
       // The backend login route accepts email as username for citizens
       const user = await login({ username: email.trim().toLowerCase(), password });
       if (user && user.role === 'citizen') {
-        navigate('/citizen');
+        navigate(nextPath);
       } else if (user && user.role !== 'citizen') {
         setApiError(
           `This is the Citizen Portal. You are signed in as [${user.role}]. ` +
           `Please use the appropriate portal.`
         );
       } else {
-        navigate('/citizen');
+        navigate(nextPath);
       }
     } catch (err) {
       setApiError(err.message || 'Sign in failed. Please check your email and password.');

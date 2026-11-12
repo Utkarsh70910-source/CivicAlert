@@ -26,6 +26,9 @@ function Navbar({ onOpenReportModal }) {
     closeMenu();
     if (onOpenReportModal) {
       onOpenReportModal();
+    } else if (!isAuthenticated) {
+      // Unauthenticated: send to sign-in; after login, return to /report
+      navigate('/citizen/signin?next=%2Freport');
     } else {
       navigate('/report');
     }
@@ -66,8 +69,7 @@ function Navbar({ onOpenReportModal }) {
             </li>
             <li className="nav-item">
               <Link to="/report" className="nav-link" onClick={closeMenu}>Citizen Report</Link>
-            </li>
-            {/* My Complaints: visible only when signed in as citizen */}
+            </li>            {/* My Complaints: visible only when signed in as citizen */}
             {isAuthenticated && role === 'citizen' && (
               <li className="nav-item">
                 <Link to="/citizen/my-complaints" className="nav-link" onClick={closeMenu}>My Complaints</Link>

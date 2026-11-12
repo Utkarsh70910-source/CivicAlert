@@ -1,4 +1,4 @@
-import { Navigate, Link } from 'react-router-dom';
+import { Navigate, Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
 /**
@@ -11,6 +11,7 @@ import { useAuth } from '../context/AuthContext';
  */
 function ProtectedRoute({ children, allowedRoles = [] }) {
   const { user, isAuthenticated, isLoading, role } = useAuth();
+  const location = useLocation();
 
   if (isLoading) {
     return (
@@ -21,7 +22,7 @@ function ProtectedRoute({ children, allowedRoles = [] }) {
     );
   }
 
-  // 1. Not Authenticated: redirect to appropriate login
+  // 1. Not Authenticated: redirect to appropriate login, preserving intended destination
   if (!isAuthenticated) {
     if (allowedRoles.includes('admin')) {
       return <Navigate to="/admin/login" replace />;
@@ -30,7 +31,9 @@ function ProtectedRoute({ children, allowedRoles = [] }) {
       return <Navigate to="/worker/login" replace />;
     }
     if (allowedRoles.includes('citizen')) {
-      return <Navigate to="/citizen/signin" replace />;
+      // Encode the current path as ?next= so sign-in can redirect back
+      const next = encodeURIComponent(location.pathname + location.search);
+      return <Navigate to={`/citizen/signin?next=${next}`} replace />;
     }
     return <Navigate to="/" replace />;
   }
