@@ -51,6 +51,9 @@ function AdminWorkersPage() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteErrorMsg, setDeleteErrorMsg] = useState(null);
 
+  // ── Status Filter ──
+  const [statusFilter, setStatusFilter] = useState('All');
+
   const loadWorkers = useCallback(async () => {
     setIsLoading(true);
     setApiError(null);
@@ -231,6 +234,13 @@ function AdminWorkersPage() {
     }
   };
 
+  // Filter workers based on selected statusFilter
+  const filteredWorkers = workers.filter((w) => {
+    if (!statusFilter || statusFilter === 'All') return true;
+    const workerStatus = (w.status || 'Active').trim();
+    return workerStatus.toLowerCase() === statusFilter.trim().toLowerCase();
+  });
+
   return (
     <div className="portal-dashboard-wrapper admin-portal-bg">
       <AdminNavbar />
@@ -289,19 +299,44 @@ function AdminWorkersPage() {
           </div>
         </div>
 
+        {/* Status Filter Toolbar */}
+        <div className="table-filter-toolbar">
+          <div className="filter-select-group">
+            <div className="filter-control">
+              <label htmlFor="filter-status">Status:</label>
+              <select
+                id="filter-status"
+                aria-label="Filter by status"
+                className="form-control form-select-sm"
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+              >
+                <option value="All">All</option>
+                <option value="Active">Active</option>
+                <option value="On Leave">On Leave</option>
+                <option value="Inactive">Inactive</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
         {isLoading ? (
           <div className="dashboard-loading-box">
             <div className="spinner-border"></div>
             <p>Loading municipal worker roster...</p>
           </div>
-        ) : workers.length === 0 ? (
+        ) : filteredWorkers.length === 0 ? (
           <div className="empty-state-card">
-            <h3>No Field Personnel Registered</h3>
-            <p>Add your first municipal technician using the button above.</p>
+            <h3>No Field Personnel Found</h3>
+            <p>
+              {workers.length === 0
+                ? 'Add your first municipal technician using the button above.'
+                : `No workers found matching the "${statusFilter}" status filter.`}
+            </p>
           </div>
         ) : (
           <div className="workers-grid">
-            {workers.map((w) => {
+            {filteredWorkers.map((w) => {
               const statusClass =
                 w.status === 'Inactive'
                   ? 'worker-status-inactive'
