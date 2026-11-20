@@ -23,6 +23,12 @@ const {
 const { Complaint, User } = require('../models');
 const { getIsConnected } = require('../config/db');
 const { authenticate, authorize, optionalAuth } = require('../middleware/auth');
+const {
+  isAzureConfigured,
+  uploadComplaintImages,
+  parseAndValidateBase64,
+  MAX_PHOTOS,
+} = require('../services/azureBlobService');
 
 const VALID_CATEGORIES = [
   'Roads & Potholes',
@@ -216,14 +222,32 @@ router.post('/', optionalAuth, async (req, res) => {
   }
 
   // Normalize uploaded photos (supports both array 'photos' and single 'photoPreview')
-  let normalizedPhotos = [];
+  let rawPhotos = [];
   if (Array.isArray(photos)) {
-    normalizedPhotos = photos.filter((p) => typeof p === 'string' && p.trim().length > 0);
+    rawPhotos = photos.filter((p) => typeof p === 'string' && p.trim().length > 0);
   } else if (photoPreview && typeof photoPreview === 'string' && photoPreview.trim().length > 0) {
-    normalizedPhotos = [photoPreview];
+    rawPhotos = [photoPreview];
   }
-  // Enforce reasonable limit (max 5 photos)
-  normalizedPhotos = normalizedPhotos.slice(0, 5);
+
+  // Enforce maximum photo limit
+  if (rawPhotos.length > MAX_PHOTOS) {
+    return res.status(400).json({
+      success: false,
+      message: `You can upload at most ${MAX_PHOTOS} photos.`,
+    });
+  }
+
+  // Backend image validation (MIME type, Base64 format, maximum 5MB size per image)
+  try {
+    for (let i = 0; i < rawPhotos.length; i++) {
+      parseAndValidateBase64(rawPhotos[i], i);
+    }
+  } catch (valErr) {
+    return res.status(400).json({
+      success: false,
+      message: valErr.message,
+    });
+  }
 
   // Generate unique Reference ID (e.g. CA-492817)
   let generatedRefId;
@@ -244,6 +268,39 @@ router.post('/', optionalAuth, async (req, res) => {
     }
   }
 
+  // Handle Azure Blob Storage upload
+  let storedBlobNames = [];
+  let storedBlobUrls = [];
+  let normalizedPhotos = [];
+
+  if (rawPhotos.length > 0) {
+    if (isAzureConfigured()) {
+      try {
+        const uploadResult = await uploadComplaintImages(rawPhotos, generatedRefId);
+        storedBlobNames = uploadResult.blobNames;
+        storedBlobUrls = uploadResult.blobUrls;
+        // In MongoDB, we store permanent Blob URLs / identifiers, NOT temporary SAS URLs
+        normalizedPhotos = storedBlobUrls;
+      } catch (uploadErr) {
+        console.error('[Complaints Create] Azure upload failed:', uploadErr.message);
+        return res.status(500).json({
+          success: false,
+          message: 'Failed to upload complaint images to storage. Please try again.',
+        });
+      }
+    } else {
+      // In production, missing Azure storage must fail clearly and never silently fallback to Base64 in MongoDB
+      if (process.env.NODE_ENV === 'production') {
+        return res.status(503).json({
+          success: false,
+          message: 'Server image storage is not configured. Please contact the administrator.',
+        });
+      }
+      // Non-production test fallback: retain raw photos for offline testing suites
+      normalizedPhotos = rawPhotos;
+    }
+  }
+
   const newId = `cmp-${Date.now()}`;
   const newComplaint = {
     id: newId,
@@ -259,6 +316,8 @@ router.post('/', optionalAuth, async (req, res) => {
     longitude: longitude !== undefined && longitude !== null && !isNaN(Number(longitude))
       ? Number(longitude)
       : null,
+    blobNames: storedBlobNames,
+    blobUrls: storedBlobUrls,
     photos: normalizedPhotos,
     photoPreview: normalizedPhotos[0] || null,
     status: 'Submitted',

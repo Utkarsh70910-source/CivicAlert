@@ -433,13 +433,26 @@ function enrichComplaint(complaint) {
     ? complaint.photos
     : (complaint.photoPreview ? [complaint.photoPreview] : []);
 
-  return {
+  const enriched = {
     ...complaint,
+    blobNames: complaint.blobNames || [],
+    blobUrls: complaint.blobUrls || [],
     photos,
     photoPreview: photos[0] || complaint.photoPreview || null,
     daysRemaining,
     isOverdue,
   };
+
+  // Dynamically populate photos and photoPreview with short-lived read-only SAS URLs
+  // if stored as Azure blob references, keeping the Blob container strictly private.
+  try {
+    const { populateSasUrls } = require('../services/azureBlobService');
+    populateSasUrls(enriched);
+  } catch (_) {
+    // Continue if service is unavailable
+  }
+
+  return enriched;
 }
 
 /**

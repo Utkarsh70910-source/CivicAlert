@@ -246,9 +246,18 @@ router.put('/:id', authenticate, authorize(['admin']), async (req, res) => {
     if (mongoWorker) mongoWorker.email = email.trim();
   }
 
+  const VALID_WORKER_STATUSES = ['Active', 'Inactive', 'On Leave'];
+
   if (status !== undefined && status.trim()) {
-    if (worker) worker.status = status.trim();
-    if (mongoWorker) mongoWorker.status = status.trim();
+    const trimmedStatus = status.trim();
+    if (!VALID_WORKER_STATUSES.includes(trimmedStatus)) {
+      return res.status(400).json({
+        success: false,
+        message: `Invalid status '${trimmedStatus}'. Allowed values: ${VALID_WORKER_STATUSES.join(', ')}`,
+      });
+    }
+    if (worker) worker.status = trimmedStatus;
+    if (mongoWorker) mongoWorker.status = trimmedStatus;
   }
 
   if (workerId !== undefined && workerId.trim()) {

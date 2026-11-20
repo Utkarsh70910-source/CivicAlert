@@ -10,7 +10,8 @@
     "test": "node tests/api_verification.js",
     "test:citizen": "node tests/citizen_flow_verification.js",
     "test:persistence": "node tests/mongodb_persistence_test.js",
-    "test:all": "node tests/api_verification.js && node tests/citizen_flow_verification.js && node tests/mongodb_persistence_test.js"
+    "test:azure": "node tests/azure_blob_integration_test.js",
+    "test:all": "node tests/api_verification.js && node tests/citizen_flow_verification.js && node tests/mongodb_persistence_test.js && node tests/azure_blob_integration_test.js"
   },
   "keywords": [
     "civicalert",
@@ -21,6 +22,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@azure/storage-blob": "^12.34.0",
     "bcryptjs": "^3.0.3",
     "cors": "^2.8.6",
     "dotenv": "^18.0.9",

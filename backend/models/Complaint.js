@@ -63,6 +63,14 @@ const complaintSchema = new mongoose.Schema(
       type: String,
       default: null,
     },
+    blobNames: {
+      type: [String],
+      default: [],
+    },
+    blobUrls: {
+      type: [String],
+      default: [],
+    },
     status: {
       type: String,
       enum: ['Submitted', 'Under Review', 'In Progress', 'Resolved'],
@@ -156,6 +164,15 @@ complaintSchema.methods.enrich = function () {
   plain.photoPreview = photos[0] || plain.photoPreview || null;
   plain.daysRemaining = daysRemaining;
   plain.isOverdue = isOverdue;
+
+  // Dynamically populate photos and photoPreview with short-lived read-only SAS URLs
+  // if stored as Azure blob references, keeping the Blob container strictly private.
+  try {
+    const { populateSasUrls } = require('../services/azureBlobService');
+    populateSasUrls(plain);
+  } catch (_) {
+    // Continue if service is unavailable
+  }
 
   return plain;
 };
